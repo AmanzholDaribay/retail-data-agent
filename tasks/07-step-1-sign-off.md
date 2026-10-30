@@ -4,7 +4,7 @@
 
 Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 
-**Blocked by:** 02 (Large, empty and typed results), 03 (Recover from bad SQL), 04 (Follow-up questions), 05 (Fail fast on bad schema or settings), 06 (Other providers and setup guide)
+**Blocked by:** 02 (Large, empty and typed results), 03 (Recover from bad SQL), 04 (Follow-up questions). Tickets 05 and 06 moved out of step 1 on 2026-10-30, to steps 4 and 7.
 
 **Status:** ready-for-agent
 
@@ -13,5 +13,4 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
   - "What were the top 5 brands by revenue last month?" returns a sensible answer, states the revenue definition, and shows its SQL;
   - the question takes at most 5 LLM calls;
   - a follow-up question works.
-- [ ] The README's example run matches the current behavior.
 - [ ] The plan's status marks step 1 as done, and any differences from the step 1 spec are noted in the plan.

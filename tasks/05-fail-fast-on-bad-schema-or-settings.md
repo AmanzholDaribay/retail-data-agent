@@ -6,7 +6,7 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 
 **Blocked by:** 01 (Walking skeleton)
 
-**Status:** ready-for-agent
+**Status:** deferred: moved out of step 1 on 2026-10-30. Now an optional step 4 item, built only if time allows.
 
 - [ ] The `Database` protocol gains `describe_tables(names)`, which returns the live columns and types for the named tables.
 - [ ] The BigQuery adapter implements `describe_tables` through the table-metadata API: no query job, no bytes scanned.

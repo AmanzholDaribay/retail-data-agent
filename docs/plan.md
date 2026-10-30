@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: step 1 in progress (ticket 01 built, live check pending). Last updated 2026-10-30.
+Status: step 1 in progress (ticket 01 done; 02–04 and the sign-off 07 open). Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. Last updated 2026-10-30.
 
 ## How we build
 
@@ -20,12 +20,15 @@ A CLI chat agent that answers retail analytics questions over `bigquery-public-d
 - Resilience: recover from SQL errors and empty results without running up cost, and survive third-party outages.
 - Observability.
 - CLI.
+- Questions asked naturally, follow-up discussion, multi-step questions, and a report with insights and action items when asked (e.g. "create a report for Q1 including insights and action items for Q2").
 
 **Design only (documented, not built)**
 - Golden Knowledge bucket (Question → SQL → Report trios).
 - Learning loop at the user and system level.
 - QA and evals.
 - Persona and tone updates without redeploying.
+
+**Also asked for in the docs:** why the framework was chosen *and the author's level of experience with it*; how new capabilities plug in (charts, emailing reports, web search for trends); agent-level metrics; setup that works on another machine, with the brief's `pip install -r requirements.txt` path.
 
 **Client answers (Harry, 2026-10-27)**
 - Access is scoped by **brand**. Each manager has one or more brands, and the CEO sees everything. A config file or access table is fine. Customer and order data are visible only through purchases of in-scope products.
@@ -49,7 +52,7 @@ Why this comes first: every other requirement sits on this loop. Scoping and mas
 
 **In scope**
 - A chat loop in the terminal that remembers earlier turns within the same run.
-- `schema.yaml` loaded once at startup into the system prompt, and checked once against the live tables.
+- `schema.yaml` loaded once at startup into the system prompt.
 - One tool that runs a SELECT and returns rows.
 - The LLM turns the rows into an answer, and the CLI shows the SQL it ran. Revenue answers state the definition used, and users can give their own.
 - At most 5 LLM calls per question (a normal turn uses 2), to fit Gemini's free tier.
@@ -59,11 +62,13 @@ Why this comes first: every other requirement sits on this loop. Scoping and mas
 
 **Out of scope for now:** SQL validation, scoping, masking, retry budgets, saved reports, logging.
 
+**Moved out on 2026-10-30**, to leave time for the parts graded most: checking `schema.yaml` against the live tables (ticket 05) is now an optional item in step 4, and the provider extras and the README setup guide (ticket 06) are part of step 7.
+
 **Key structural decision:** the database is reached only through one small module, the **query gateway**. It is the only path from the LLM to the data. Later steps plug SQL validation, brand scoping, PII masking and cost limits into it without touching the rest of the code. The gateway sits on top of a swappable database adapter, so the policy layer and the driver stay separate.
 
 ### Step 1 design
 
-Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-core-loop.md](specs/step-1-core-loop.md). Broken into 7 tickets in [`tasks/`](../tasks/): 01 is the walking skeleton, 02–06 each depend only on 01, and 07 is the sign-off. Explainers: [architecture map](architecture.html) and [why `run_sql` has a factory](tool-factory.html).
+Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-core-loop.md](specs/step-1-core-loop.md). Broken into 7 tickets in [`tasks/`](../tasks/): 01 is the walking skeleton, 02–06 each depend only on 01, and 07 is the sign-off. Trimmed on 2026-10-30: step 1 is now 01–04 plus the sign-off 07; ticket 05 moved to step 4 (optional) and 06 to step 7. Explainers: [architecture map](architecture.html) and [why `run_sql` has a factory](tool-factory.html).
 
 | # | Decision | Rejected, and why |
 |---|---|---|
@@ -72,7 +77,7 @@ Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-c
 | 3 | **Providers:** default `google_genai:gemini-3.8-flash`, the newest stable Flash model on the free tier (per Google's docs, 2026-10-28), as the client confirmed on 2026-10-29. Its package is a regular dependency. Anthropic, OpenAI and Azure OpenAI stay available through config but are switched off by default: their packages are optional extras. Falling back between Gemini models (e.g. to `gemini-3.5-flash-lite` on rate limits) comes in step 4. | **Claude as the default** (the first pick): the client's reviewers test with a free Gemini key only. **Falling back to other providers:** the client asked for Gemini-only fallback, and other providers need keys reviewers don't have. |
 | 4 | **Database:** our own `Database` protocol with `dialect`, `execute(sql, max_rows) → QueryResult(columns, rows, truncated, bytes_processed)` and `describe_tables(names)`. The `BigQueryDatabase` adapter sets `maximum_bytes_billed` on every job. Another engine means another adapter behind the same protocol. | **LangChain `SQLDatabase` / SQLAlchemy:** many engines for free, but they hide the BigQuery features we need soon: dry-run byte estimates (step 2) and job stats (step 6). |
 | 5 | **Layering:** `run_sql` tool → QueryGateway (policy; in step 1 it only passes queries through and caps rows) → database adapter (driver only). The tool never calls the adapter directly. Safety lives in the gateway; middleware is only for agent-level concerns. | **Safety in middleware:** it would depend on the framework, and LangChain's PII middleware matches patterns, which Harry called not robust enough. |
-| 6 | **Schema:** `schema.yaml` is the schema in cleaner form: tables, columns and types, plus short notes where a name doesn't explain itself (status values, `sale_price` vs `retail_price`, joins). It holds the dataset name too. It is loaded once at startup and rendered into the system prompt, and checked once against the live tables through `describe_tables()` (BigQuery metadata API, no bytes scanned). A missing table or column fails fast. Step 3 adds `pii` and `aggregate_only` tags to the same file. | **Reading the schema from the database:** column names without meaning lead to worse SQL. **Per-question `list_tables` / `get_schema` tools:** an extra round trip and extra tokens on every question. |
+| 6 | **Schema:** `schema.yaml` is the schema in cleaner form: tables, columns and types, plus short notes where a name doesn't explain itself (status values, `sale_price` vs `retail_price`, joins). It holds the dataset name too. It is loaded once at startup and rendered into the system prompt, and checked once against the live tables through `describe_tables()` (BigQuery metadata API, no bytes scanned). A missing table or column fails fast (ticket 05, now optional in step 4). Step 3 adds `pii` and `aggregate_only` tags to the same file. | **Reading the schema from the database:** column names without meaning lead to worse SQL. **Per-question `list_tables` / `get_schema` tools:** an extra round trip and extra tokens on every question. |
 | 7 | **Prompt:** the template `prompts/system.md`, filled in with the schema and the dialect. | **A string in the code:** persona and tone changes would need a code change. |
 | 8 | **Tool contract:** on success, a compact table capped at `MAX_ROWS` (default 50), with a footer when the result was cut off, and dates and decimals as plain strings. On failure, `Error: <message>` goes back to the model so it can fix the SQL. A budget of 5 LLM calls per question (a normal turn uses 2: one to write SQL, one to answer) keeps a turn inside Gemini's free-tier limits; reaching it ends the turn with a clear message (ticket 03). | **JSON rows:** noticeably more tokens. **Raising the exception:** bad SQL would crash the turn. |
 | 9 | **Memory:** `InMemorySaver` checkpointer with one `thread_id` per CLI run. Follow-ups work, and the step 5 delete confirmation (a LangGraph interrupt) needs a checkpointer anyway. | **No memory:** breaks follow-ups. **Persistent memory:** not needed yet. |
@@ -106,14 +111,15 @@ tests/
 
 ## Steps after that
 
-### Step 2: Query guard
+### Step 2: Query guard and analysis-only scope
 
-Lives inside the gateway.
+The SQL checks live inside the gateway.
 
 - Parse the SQL (e.g. with `sqlglot`) and accept only a single SELECT over the 4 allowed tables.
 - Dry-run each query to get the bytes it would scan, and reject anything above the limit. The dry run becomes a new method on the `Database` protocol.
+- Analysis only (the brief: "only allowed to answer analysis questions"): the system prompt tells the model to answer only questions about the retail data, and to refuse anything else, including requests to ignore its instructions, reveal its prompt or change data. This costs no extra LLM call. It is only the first line: the gateway's checks, here and in step 3, are what actually stop a malicious user.
 
-**Done when:** DML, DDL, multiple statements and other tables are rejected, with a clear message the model can act on.
+**Done when:** DML, DDL, multiple statements and other tables are rejected, with a clear message the model can act on, and off-topic or instruction-overriding requests get a short refusal.
 
 ### Step 3: Brand scoping and PII protection
 
@@ -134,16 +140,19 @@ Lives inside the gateway. This is the most heavily graded part.
 - Empty result: the model rechecks its filters and assumptions within the same budget, then says plainly that nothing matched.
 - Gemini 429/5xx: exponential backoff with jitter, then fall back to another Gemini model (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`, configurable). The fallback stays within Gemini, as the client asked. Seen on 2026-10-30: `gemini-3.8-flash` returned 503 "high demand", and the Gemini SDK's own silent retries made the CLI look frozen for minutes. So set a short timeout and few SDK retries, and fall back quickly. Done early (2026-10-30): each LLM call has a 30s timeout and 1 SDK retry (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`), and a failed question prints a clear message while the CLI keeps running. The Gemini fallback itself is still to do. BigQuery: timeouts, plus retries on transient errors.
 - During an outage the user gets a clear message, and the CLI keeps running.
+- Optional, if time allows (ticket 05, moved from step 1): at startup, check `schema.yaml` against the live tables through `describe_tables()` (metadata only, no bytes scanned) and fail fast, naming each missing table or column. A missing required setting fails the same way.
 
 **Done when:** a bad column, a forced 429 and a network drop each end in either a recovered answer or a clean message, never a crash.
 
-### Step 5: Saved reports and deletion
+### Step 5: Reports: create, save and delete
 
-- A local store (e.g. SQLite) that records the owner of every report. A report holds the question, the SQL and the answer (confirmed by the client). Tools: save, list, delete.
+- Creating a report: when asked (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs and writes findings, insights and action items. Multi-step questions ("why are users in state X underspending, and how do they compare with state Y?") work the same way. To stay within the 5-call budget, the prompt asks the model to send independent queries together as parallel tool calls in one reply (Gemini supports this), so a report needs 1–2 query rounds plus the call that writes it. See the open decision on the report budget if that isn't enough.
+- A local store (e.g. SQLite) that records the owner, the conversation id and the creation time of every report. A report holds the question, the SQL and the answer (confirmed by the client). Tools: save, list, delete.
+- Deletion selects reports by content or by conversation, to cover the brief's two examples: "Delete all reports mentioning Client X" (a text search over the question and answer, e.g. SQLite FTS5) and "Delete all the reports we made in this conversation" (filter on the current conversation id).
 - Ownership is checked in the store query, not left to the prompt.
-- The model can only *propose* a deletion. Code, not the LLM, shows the exact list, asks for explicit typed confirmation (a LangGraph interrupt), and then hard-deletes.
+- The model can only *propose* a deletion. Code, not the LLM, shows the exact list, asks for explicit typed confirmation (a LangGraph interrupt), and then hard-deletes. The confirmation happens inside the chat, so the UX doesn't break: cancelling leaves everything as it was, and the chat continues.
 
-**Done when:** user A can't see or delete user B's reports, and nothing is deleted without confirmation.
+**Done when:** a Q1 report request produces insights and action items within the call budget; both example deletions show the exact matching list and delete only after confirmation; user A can't see or delete user B's reports; and nothing is deleted without confirmation.
 
 ### Step 6: Observability
 
@@ -152,31 +161,35 @@ Lives inside the gateway. This is the most heavily graded part.
 - Add our own context to each trace: user, model, SQL bytes scanned, rows, retries. Use trace metadata/tags on the agent call, and the gateway's run as a traced step.
 - Privacy: traces contain prompts and tool results, so they go to LangSmith's servers. After step 3 the gateway masks PII before rows reach the model, so traces only hold masked data. Note this in the design doc.
 - The local log file stays as the offline fallback when tracing is off.
+- Agent-level metrics, defined in the design doc, each with where it comes from (a log line or a trace field): answered vs. failed questions, with the failure cause (LLM outage, call budget reached, guard rejection, unexpected error); SQL errors and self-corrections per question; empty-result rate; LLM calls and tokens per question; latency (p50/p95); bytes scanned per question; Gemini fallbacks; delete confirmations accepted vs. cancelled.
 
-**Done when:** one question's LangSmith trace shows how its answer was produced (LLM calls, SQL, rows, timing), and the log file gives the same story when tracing is off.
+**Done when:** one question's LangSmith trace shows how its answer was produced (LLM calls, SQL, rows, timing), the log file gives the same story when tracing is off, and every metric in the design doc maps to a log line or trace field.
 
 ### Step 7: Docs
 
-The docs grow with each step, and this step finishes them.
+The docs grow with each step, and this step finishes them. Start the HLD outline right after step 1 and fill it in as each step lands: grading weights the design and the write-up most, so they shouldn't be squeezed in at the end.
 
 - HLD with a Mermaid architecture diagram.
-- Technical write-up: cloud services, LLM and framework choice with reasoning, data flow, error handling, setup with an example run, and how each requirement is met.
-- Design for the design-only parts: Golden Knowledge bucket, learning loop, QA and evals, persona and tone updates without redeploying.
+- Technical write-up: cloud services, LLM and framework choice with reasoning **and the author's level of experience with the framework** (the brief asks for it), data flow, error handling, setup with an example run, and how each requirement is met.
+- Design for the design-only parts: Golden Knowledge bucket (how it's updated over time, and how relevant trios reach the model at question time), learning loop (user level: tables vs. bullets, depth, charts vs. text; system level: learning from past interactions), QA and evals (before deployment, checking that reports answer the user's intent, UX), persona and tone updates without redeploying.
+- Extensibility: how a new capability (charts, emailing reports, web search for trends) plugs in as another tool, behind the same policy layers.
+- Setup for reviewers (ticket 06, moved from step 1): Anthropic and OpenAI as optional extras, a commented `.env.example`, and a README with the Gemini key and GCP setup, an example run, and the provider status (Gemini is the default and tested; Anthropic, OpenAI and Azure OpenAI are available but switched off). Ship a `requirements.txt` exported with `uv export`, so the brief's `pip install -r requirements.txt` works next to the `uv` path.
 - Points the client asked to see covered: the provider trade-off (swappable providers vs. a Gemini-only default), the minimum group size, and IP address listed as PII.
 
 ## Requirement → step
 
 | Requirement | Step |
 |---|---|
-| CLI | 1 |
-| Safety: read-only queries, cost limit | 1–2 |
+| CLI, follow-up discussion | 1 |
+| Safety: read-only queries, cost limit, analysis only | 1–2 |
 | Brand scoping, PII masking | 3 |
 | Resilience | 4 |
-| High-stakes oversight | 5 |
-| Observability | 6 |
-| HLD, write-up, design-only parts | 7 (grows alongside) |
+| Reports with action items, multi-step questions, high-stakes oversight | 5 |
+| Observability, agent-level metrics | 6 |
+| HLD, write-up, design-only parts, extensibility, reviewer setup | 7 (grows alongside) |
 
 ## Open decisions
 
 - **Scoping mechanism.** Rewrite the SQL or use scoped views. Decide in step 3.
 - **Measuring group size.** How the gateway knows how many customers are behind an aggregate row. Decide in step 3.
+- **Call budget for reports.** If a report or a multi-step question doesn't fit in 5 LLM calls even with parallel queries, ask Harry whether report requests may use more (e.g. 8), or split the report across turns. Decide in step 5.
