@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Retail Data Agent Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; the request flow is a vertical pipeline of file "stations" with the LLM loop beside the agent. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --data: #1f6f8b;        /* data path: tool, gateway, database */
+  --data-soft: #e3f0f4;
+  --llm: #a35a12;         /* LLM side */
+  --llm-soft: #f8ecdf;
+  --file: #5b4f8a;        /* data files and config */
+  --file-soft: #ece9f5;
+  --ui: #2c6b3f;          /* what you see in the terminal */
+  --ui-soft: #e4f1e7;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --data: #6cc0dc; --data-soft: #16323d; --llm: #e7a464; --llm-soft: #3a2a1a;
+    --file: #b3a8e6; --file-soft: #28243d; --ui: #7fcf96; --ui-soft: #1b3324;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --data: #6cc0dc; --data-soft: #16323d; --llm: #e7a464; --llm-soft: #3a2a1a;
+  --file: #b3a8e6; --file-soft: #28243d; --ui: #7fcf96; --ui-soft: #1b3324;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0;
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 960px; margin: 0 auto; display: grid; gap: 48px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.35rem; font-weight: 600; }
+h3 { font-size: 1rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 16px; min-width: 0; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid; }
+
+/* pipeline */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 0 28px; }
+.station {
+  border: 1.5px solid var(--c); background: var(--c-soft); border-radius: 8px;
+  padding: 12px 14px; display: grid; gap: 4px; min-width: 0;
+}
+.station .file { font: 600 0.9rem var(--font-mono); color: var(--c); }
+.station p { font-size: 0.9rem; }
+.ui   { --c: var(--ui);   --c-soft: var(--ui-soft); }
+.data { --c: var(--data); --c-soft: var(--data-soft); }
+.llm  { --c: var(--llm);  --c-soft: var(--llm-soft); }
+.cfg  { --c: var(--file); --c-soft: var(--file-soft); }
+.arrow { height: 28px; display: grid; place-items: center; color: var(--muted); font: 500 0.75rem var(--font-mono); position: relative; }
+.arrow::before { content: ""; position: absolute; top: 2px; bottom: 8px; left: 50%; border-left: 1.5px solid var(--line); }
+.arrow::after { content: ""; position: absolute; bottom: 2px; left: calc(50% - 5px); border: 5px solid transparent; border-top: 6px solid var(--line); border-bottom: 0; }
+.arrow.both::before { top: 8px; }
+.arrow span { position: relative; background: var(--bg); padding: 0 6px; transform: translateX(calc(50% + 10px)); justify-self: start; margin-left: 50%; white-space: nowrap; }
+.col-main { grid-column: 1; }
+.col-side { grid-column: 2; }
+.loop {
+  grid-column: 2; grid-row: span 3; align-self: center;
+  border: 1.5px dashed var(--llm); border-radius: 10px; padding: 14px; display: grid; gap: 10px;
+}
+.loop .steps { margin: 0; padding-left: 1.2em; font-size: 0.88rem; display: grid; gap: 4px; }
+.loop .note { font-size: 0.82rem; color: var(--muted); }
+.spacer { grid-column: 2; }
+
+/* example terminal */
+.term {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px; font: 0.82rem/1.55 var(--font-mono); overflow-x: auto; white-space: pre; margin: 0;
+}
+.term .h-sql { color: var(--data); font-weight: 600; }
+.term .h-ans { color: var(--ui); font-weight: 600; }
+.term .dim { color: var(--muted); }
+
+/* startup */
+.startup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.merge { text-align: center; color: var(--muted); font: 500 0.8rem var(--font-mono); }
+.result { border: 1.5px solid var(--fg); border-radius: 8px; padding: 12px 14px; background: var(--surface); }
+
+/* files table */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+th { font: 500 0.72rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.path { font-family: var(--font-mono); font-size: 0.84rem; white-space: nowrap; }
+td.path::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 8px; vertical-align: 1px; }
+tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: var(--muted); padding-block: 8px; }
+.grows { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+
+/* seams */
+.seams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.seam { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: var(--surface); display: grid; gap: 6px; align-content: start; }
+.seam ul { margin: 0; padding-left: 1.1em; font-size: 0.9rem; }
+
+@media (max-width: 720px) {
+  .flow { grid-template-columns: minmax(0, 1fr); }
+  .loop, .spacer, .col-side { grid-column: 1; grid-row: auto; }
+  .spacer { display: none; }
+  .loop { margin-block: 8px; }
+  .startup, .seams { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <header style="display:grid;gap:12px">
+    <div class="eyebrow">retail-data-agent · step 1 · as of 2026-10-30</div>
+    <h1>Retail Data Agent Map</h1>
+    <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>.</p>
+    <div class="legend" aria-label="Color legend">
+      <span><i class="swatch" style="border-color:var(--ui);background:var(--ui-soft)"></i>What you see</span>
+      <span><i class="swatch" style="border-color:var(--llm);background:var(--llm-soft)"></i>Agent and LLM</span>
+      <span><i class="swatch" style="border-color:var(--data);background:var(--data-soft)"></i>Data path</span>
+      <span><i class="swatch" style="border-color:var(--file);background:var(--file-soft)"></i>Config and data files</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="flow-h">
+    <h2 id="flow-h">One question, end to end</h2>
+    <p>Each box is a file. The agent and the LLM go back and forth until the model has enough data to answer. A normal question takes 2 LLM calls.</p>
+
+    <div class="flow">
+      <div class="station ui col-main"><span class="file">cli.py</span><p>You type <em>"Top 5 brands by revenue last month?"</em>. Prints the SQL and ANSWER blocks, or a clear message if the model is busy.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>app.ask(question)</span></div>
+      <div class="spacer"></div>
+
+      <div class="station llm col-main"><span class="file">app.py → App.ask</span><p>Sends the question to the agent and collects the answer plus every SQL statement run during the turn.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>invoke</span></div>
+      <div class="loop" aria-label="Agent loop">
+        <h3>The agent loop</h3>
+        <ol class="steps">
+          <li>LLM reads the question, the schema and the rules, then writes SQL.</li>
+          <li><code>run_sql</code> runs it and returns rows as a table.</li>
+          <li>LLM reads the rows and writes the answer.</li>
+        </ol>
+        <p class="note">If the SQL fails, the error goes back to the LLM so it can fix it. Ticket 03 caps a question at 5 LLM calls.</p>
+      </div>
+
+      <div class="station llm col-main"><span class="file">agent.py</span><p>LangChain <code>create_agent</code>: the loop between the model and the tool.</p></div>
+
+      <div class="arrow both col-main"><span>model ⇄ tool</span></div>
+
+      <div class="station llm col-main"><span class="file">llm.py</span><p>Builds the chat model from <code>LLM_PROVIDER:LLM_MODEL</code>, with a 30 s timeout and 1 retry. Gemini by default; Claude when you switch it on.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>tool call: run_sql(sql)</span></div>
+      <div class="spacer"></div>
+
+      <div class="station data col-main"><span class="file">tools.py → run_sql</span><p>The only tool. Hands the SQL to the gateway and turns the result into a compact text table for the LLM.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>gateway.run(sql)</span></div>
+      <div class="spacer"></div>
+
+      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, caps rows. Later: blocks non-SELECTs, scopes brands, masks PII.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>database.execute(sql, max_rows)</span></div>
+      <div class="spacer"></div>
+
+      <div class="station data col-main"><span class="file">db/bigquery.py</span><p>Runs the query in BigQuery, billed to <code>GCP_PROJECT</code>, never more than <code>MAX_BYTES_BILLED</code>. Follows the <code>Database</code> protocol in <code>db/base.py</code>.</p></div>
+      <div class="spacer"></div>
+
+      <div class="arrow col-main"><span>job</span></div>
+      <div class="spacer"></div>
+
+      <div class="station data col-main"><span class="file">bigquery-public-data.thelook_ecommerce</span><p>orders · order_items · products · users. A typical question scans 3–7 MB.</p></div>
+      <div class="spacer"></div>
+    </div>
+
+    <p>What you see in the terminal for that question:</p>
+<pre class="term"><span class="dim">&gt; What were the top 5 brands by revenue last month?
+Working...</span>
+
+<span class="h-sql">── SQL ─────────────────────────────────────</span>
+SELECT p.brand, ROUND(SUM(oi.sale_price), 2) AS revenue
+FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
+JOIN `bigquery-public-data.thelook_ecommerce.products` AS p ON oi.product_id = p.id
+WHERE oi.status NOT IN ('Cancelled', 'Returned')
+  AND oi.created_at &gt;= TIMESTAMP(DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 1 MONTH))
+  AND oi.created_at &lt; TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), MONTH))
+GROUP BY p.brand ORDER BY revenue DESC LIMIT 5
+
+<span class="h-ans">── ANSWER ──────────────────────────────────</span>
+1. Diesel: $8,024.59      2. True Religion: $7,671.26
+3. Calvin Klein: $7,036.47   4. Carhartt: $6,073.56   5. 7 For All Mankind: $6,024.97
+Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
+    <p class="lede" style="font-size:0.9rem">Meanwhile <code>observability.py</code> and <code>gateway.py</code> write each step to <code>logs/retail-agent.log</code>: each LLM call with its duration, each SQL with rows and bytes.</p>
+  </section>
+
+  <section aria-labelledby="start-h">
+    <h2 id="start-h">At startup, once</h2>
+    <p>Before the first question, <code>app.py</code> puts the pieces together. <code>build_app</code> creates the real model and database; <code>assemble</code> wires them. Tests call <code>assemble</code> directly with fakes.</p>
+    <div class="startup">
+      <div class="station cfg"><span class="file">.env → config.py</span><p>Model, keys, GCP project, row and byte limits. <code>.env</code> is never committed.</p></div>
+      <div class="station cfg"><span class="file">schema.yaml → schema.py</span><p>The 4 tables, cleaned up, with short notes. Names, emails and addresses are left out on purpose.</p></div>
+      <div class="station cfg"><span class="file">prompts/system.md</span><p>The rules: answer only from query results, compute dates in SQL, state the revenue definition.</p></div>
+    </div>
+    <div class="merge">↓ filled in together ↓</div>
+    <div class="result"><span class="file mono" style="font-weight:600">system prompt</span><p style="font-size:0.9rem">Rules + schema + SQL dialect, sent with every LLM call. The agent never has to look up the schema itself.</p></div>
+  </section>
+
+  <section aria-labelledby="files-h">
+    <h2 id="files-h">Every file and why it exists</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Why it exists</th><th>Grows in</th></tr></thead>
+        <tbody>
+          <tr class="group"><td colspan="3">Application code · src/retail_agent/</td></tr>
+          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL and ANSWER blocks, turns failures into plain messages.</td><td class="grows">step 3 (<code>--user</code>)</td></tr>
+          <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL.</td><td class="grows">each step</td></tr>
+          <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Kept separate so loop rules attach here as middleware.</td><td class="grows">tickets 03, 04; steps 4, 5</td></tr>
+          <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">step 4 (Gemini fallback)</td></tr>
+          <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls, and how results are shown to it.</td><td class="grows">tickets 02, 03; step 5</td></tr>
+          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it.</td><td class="grows">steps 2, 3</td></tr>
+          <tr class="data"><td class="path">db/base.py</td><td>The <code>Database</code> protocol and <code>QueryResult</code>. What any database must offer to plug in.</td><td class="grows">tickets 03, 05</td></tr>
+          <tr class="data"><td class="path">db/bigquery.py</td><td>The BigQuery implementation: billing project, byte cap, rows and bytes processed.</td><td class="grows">tickets 02, 05; step 2</td></tr>
+          <tr class="cfg"><td class="path">config.py</td><td>Typed settings read from the environment, with defaults.</td><td class="grows">as settings are added</td></tr>
+          <tr class="cfg"><td class="path">schema.py</td><td>Reads <code>schema.yaml</code> and renders it for the prompt.</td><td class="grows">ticket 05; step 3</td></tr>
+          <tr class="llm"><td class="path">observability.py</td><td>Logs every LLM call with its duration or error, so a slow or busy model is visible.</td><td class="grows">step 6</td></tr>
+          <tr class="cfg"><td class="path">__init__.py, db/__init__.py</td><td>Mark the folders as Python packages.</td><td class="grows">–</td></tr>
+
+          <tr class="group"><td colspan="3">Data and prompt · edited without touching code</td></tr>
+          <tr class="cfg"><td class="path">schema.yaml</td><td>What the agent knows about the data: tables, columns, types, notes such as the revenue definition.</td><td class="grows">step 3 (PII tags)</td></tr>
+          <tr class="cfg"><td class="path">prompts/system.md</td><td>The agent's instructions, as a template. Persona and tone change here.</td><td class="grows">as needed</td></tr>
+
+          <tr class="group"><td colspan="3">Setup</td></tr>
+          <tr class="cfg"><td class="path">.env.example</td><td>Every setting documented. Copy it to <code>.env</code> and fill in your keys.</td><td class="grows">as settings are added</td></tr>
+          <tr class="cfg"><td class="path">pyproject.toml, uv.lock</td><td>Dependencies and the <code>retail-agent</code> command. Anthropic is an optional extra.</td><td class="grows">–</td></tr>
+          <tr class="cfg"><td class="path">.python-version, .gitignore</td><td>Pins Python 3.12. Keeps <code>.env</code>, <code>logs/</code> and the virtualenv out of git.</td><td class="grows">–</td></tr>
+
+          <tr class="group"><td colspan="3">Tests · run offline, no keys needed</td></tr>
+          <tr class="ui"><td class="path">tests/fakes.py</td><td>A scripted fake LLM that records what it was sent, and a fake database with canned rows.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives a full question through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures.</td><td class="grows">each step</td></tr>
+
+          <tr class="group"><td colspan="3">Docs and planning</td></tr>
+          <tr class="cfg"><td class="path">docs/plan.md</td><td>The brief, client answers, the 7-step plan and every design decision with its rejected alternatives.</td><td class="grows">each step</td></tr>
+          <tr class="cfg"><td class="path">docs/specs/step-1-core-loop.md</td><td>Step 1 in detail: user stories, decisions, test cases.</td><td class="grows">–</td></tr>
+          <tr class="cfg"><td class="path">tasks/01–07</td><td>Step 1 split into tickets. 01 is done; 02–06 each depend only on 01; 07 signs off.</td><td class="grows">–</td></tr>
+          <tr class="cfg"><td class="path">README.md</td><td>Stub for now. Ticket 06 turns it into the setup guide.</td><td class="grows">ticket 06</td></tr>
+          <tr class="cfg"><td class="path">logs/retail-agent.log</td><td>Created when you run the agent. Not committed.</td><td class="grows">step 6</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="seam-h">
+    <h2 id="seam-h">Where later steps plug in</h2>
+    <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
+    <div class="seams">
+      <div class="seam"><h3>Query gateway</h3><ul><li>Step 2: only single SELECTs on the 4 tables; dry-run cost check</li><li>Step 3: brand scoping, PII blocking, groups under 5 hidden</li></ul></div>
+      <div class="seam"><h3>Agent middleware</h3><ul><li>Ticket 03: at most 5 LLM calls per question</li><li>Step 4: fall back between Gemini models</li><li>Step 5: confirm before deleting reports</li></ul></div>
+      <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
+      <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove no PII reaches the LLM</li></ul></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

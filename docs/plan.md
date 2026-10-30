@@ -63,7 +63,7 @@ Why this comes first: every other requirement sits on this loop. Scoping and mas
 
 ### Step 1 design
 
-Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-core-loop.md](specs/step-1-core-loop.md). Broken into 7 tickets in [`tasks/`](../tasks/): 01 is the walking skeleton, 02–06 each depend only on 01, and 07 is the sign-off.
+Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-core-loop.md](specs/step-1-core-loop.md). Broken into 7 tickets in [`tasks/`](../tasks/): 01 is the walking skeleton, 02–06 each depend only on 01, and 07 is the sign-off. Explainers: [architecture map](architecture.html) and [why `run_sql` has a factory](tool-factory.html).
 
 | # | Decision | Rejected, and why |
 |---|---|---|
@@ -148,9 +148,12 @@ Lives inside the gateway. This is the most heavily graded part.
 ### Step 6: Observability
 
 - Started early (2026-10-30): plain-text logs in `logs/retail-agent.log` covering each question, each LLM call with its duration or error, and each SQL statement with its duration, rows and bytes.
-- A trace id for each turn, plus structured JSON logs at the two seams (the agent loop and the gateway): user, question, SQL, bytes scanned, rows, latency, retries, tokens, errors.
+- **Tracing with LangSmith** (decided 2026-10-30). LangChain and LangGraph send traces to LangSmith with no code changes once `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT` are set. Each question becomes one trace showing every LLM call, tool call, SQL, latency and token count. Tracing stays off by default, so reviewers don't need a LangSmith account.
+- Add our own context to each trace: user, model, SQL bytes scanned, rows, retries. Use trace metadata/tags on the agent call, and the gateway's run as a traced step.
+- Privacy: traces contain prompts and tool results, so they go to LangSmith's servers. After step 3 the gateway masks PII before rows reach the model, so traces only hold masked data. Note this in the design doc.
+- The local log file stays as the offline fallback when tracing is off.
 
-**Done when:** the log lines for one turn explain how its answer was produced.
+**Done when:** one question's LangSmith trace shows how its answer was produced (LLM calls, SQL, rows, timing), and the log file gives the same story when tracing is off.
 
 ### Step 7: Docs
 
