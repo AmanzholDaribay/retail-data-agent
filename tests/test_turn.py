@@ -1,5 +1,7 @@
+import logging
 from pathlib import Path
 
+import pytest
 from fakes import FakeDatabase, ScriptedChatModel, run_sql_call
 from langchain_core.messages import AIMessage, SystemMessage
 
@@ -44,3 +46,29 @@ def test_model_sees_the_schema_and_dialect_in_its_system_message():
     assert "fakesql SQL" in system_message.text
     for table in ["orders", "order_items", "products", "users"]:
         assert f"`bigquery-public-data.thelook_ecommerce.{table}`" in system_message.text
+
+
+def test_logs_the_question_each_llm_call_and_the_sql(caplog):
+    sql = "SELECT 1"
+    model = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("One.")])
+    database = FakeDatabase([QueryResult(columns=["x"], rows=[(1,)], bytes_processed=10)])
+
+    with caplog.at_level(logging.INFO, logger="retail_agent"):
+        assemble_app(model, database).ask("What is one?")
+
+    log = caplog.text
+    assert "Question: What is one?" in log
+    assert log.count("LLM call started") == 2
+    assert log.count("LLM call finished") == 2
+    assert f"SQL: {sql}" in log
+    assert "1 rows, 10 bytes processed" in log
+
+
+def test_a_failing_model_fails_the_turn_and_is_logged(caplog):
+    model = ScriptedChatModel(script=[RuntimeError("503 UNAVAILABLE: model is busy")])
+
+    with caplog.at_level(logging.INFO, logger="retail_agent"), pytest.raises(RuntimeError, match="503"):
+        assemble_app(model, FakeDatabase([])).ask("Anything")
+
+    assert "LLM call failed" in caplog.text
+    assert "503 UNAVAILABLE" in caplog.text

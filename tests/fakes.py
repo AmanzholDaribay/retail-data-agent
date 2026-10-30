@@ -20,9 +20,12 @@ def run_sql_call(sql: str) -> AIMessage:
 
 
 class ScriptedChatModel(BaseChatModel):
-    """Replies with a fixed script of messages and records every message list it was sent."""
+    """Replies with a fixed script of messages and records every message list it was sent.
 
-    script: list[AIMessage]
+    A script entry can also be an exception, which the model raises instead of replying.
+    """
+
+    script: list[Any]  # AIMessage or Exception; Any stops pydantic coercing exceptions into messages
     received: list[list[BaseMessage]] = Field(default_factory=list)
 
     @property
@@ -36,7 +39,10 @@ class ScriptedChatModel(BaseChatModel):
         self.received.append(list(messages))
         if len(self.received) > len(self.script):
             raise AssertionError(f"Model was called {len(self.received)} times, but the script has {len(self.script)} replies")
-        return ChatResult(generations=[ChatGeneration(message=self.script[len(self.received) - 1])])
+        reply = self.script[len(self.received) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 class FakeDatabase:

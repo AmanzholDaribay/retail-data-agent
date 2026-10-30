@@ -1,4 +1,9 @@
+import logging
+import time
+
 from retail_agent.db.base import Database, QueryResult
+
+logger = logging.getLogger(__name__)
 
 
 class QueryGateway:
@@ -13,4 +18,17 @@ class QueryGateway:
         self._max_rows = max_rows
 
     def run(self, sql: str) -> QueryResult:
-        return self._database.execute(sql, self._max_rows)
+        logger.info("SQL: %s", sql)
+        started = time.monotonic()
+        try:
+            result = self._database.execute(sql, self._max_rows)
+        except Exception as error:
+            logger.warning("SQL failed after %.1fs: %s", time.monotonic() - started, error)
+            raise
+        logger.info(
+            "SQL finished in %.1fs: %d rows, %s bytes processed",
+            time.monotonic() - started,
+            len(result.rows),
+            result.bytes_processed,
+        )
+        return result

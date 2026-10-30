@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 from langchain_core.language_models import BaseChatModel
@@ -10,8 +11,11 @@ from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
 from retail_agent.gateway import QueryGateway
 from retail_agent.llm import build_model
+from retail_agent.observability import LlmCallLogger
 from retail_agent.schema import Schema, load_schema
 from retail_agent.tools import make_run_sql
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -25,7 +29,11 @@ class App:
         self._agent = agent
 
     def ask(self, question: str) -> TurnResult:
-        state = self._agent.invoke({"messages": [HumanMessage(question)]})
+        logger.info("Question: %s", question)
+        state = self._agent.invoke(
+            {"messages": [HumanMessage(question)]},
+            config={"callbacks": [LlmCallLogger()]},
+        )
         turn = _current_turn(state["messages"])
         sql = [
             call["args"]["sql"]
@@ -34,6 +42,7 @@ class App:
             for call in message.tool_calls
             if call["name"] == "run_sql"
         ]
+        logger.info("Answered with %d SQL statements", len(sql))
         return TurnResult(answer=turn[-1].text, sql=sql)
 
 

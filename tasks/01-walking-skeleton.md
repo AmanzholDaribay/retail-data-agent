@@ -6,7 +6,7 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 
 **Blocked by:** None (can start immediately)
 
-**Status:** in progress (manual live check pending)
+**Status:** done
 
 - [x] The folder is a git repo and a `uv`-managed Python 3.12 project, with a `src/` layout, `pytest`, and a `retail-agent` console script.
 - [x] Typed settings load from the environment or `.env`: `LLM_PROVIDER`, `LLM_MODEL`, `GCP_PROJECT`, `MAX_BYTES_BILLED`, `MAX_ROWS`, `SCHEMA_PATH`, `PROMPT_PATH`, plus the provider API key. A `.env.example` exists.
@@ -30,4 +30,4 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 - [x] Offline tests that go through **assemble** with the fakes pass:
   - **happy path:** the TurnResult holds the answer and the SQL, and the fake database received that same SQL;
   - the system message the model receives contains the rendered schema and the dialect.
-- [ ] Manual check: the example question, run on Gemini (free AI Studio key) against real BigQuery, returns a sensible answer and its SQL.
+- [x] Manual check: the example question, run on Gemini (free AI Studio key) against real BigQuery, returns a sensible answer and its SQL. Passed 2026-10-30 on `gemini-3.6-flash`, because `gemini-3.8-flash` was returning 503 "high demand" at the time. The answer gave the top 5 brands for September 2026, stated the revenue definition, and took 3 LLM calls.

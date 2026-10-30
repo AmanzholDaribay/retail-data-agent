@@ -132,7 +132,7 @@ Lives inside the gateway. This is the most heavily graded part.
 
 - SQL error: the error goes back to the model to fix, within a fixed retry budget. The dry-run catches mistakes before they cost anything.
 - Empty result: the model rechecks its filters and assumptions within the same budget, then says plainly that nothing matched.
-- Gemini 429/5xx: exponential backoff with jitter, then fall back to another Gemini model (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`, configurable). The fallback stays within Gemini, as the client asked. BigQuery: timeouts, plus retries on transient errors.
+- Gemini 429/5xx: exponential backoff with jitter, then fall back to another Gemini model (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`, configurable). The fallback stays within Gemini, as the client asked. Seen on 2026-10-30: `gemini-3.8-flash` returned 503 "high demand", and the Gemini SDK's own silent retries made the CLI look frozen for minutes. So set a short timeout and few SDK retries, and fall back quickly. Done early (2026-10-30): each LLM call has a 30s timeout and 1 SDK retry (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`), and a failed question prints a clear message while the CLI keeps running. The Gemini fallback itself is still to do. BigQuery: timeouts, plus retries on transient errors.
 - During an outage the user gets a clear message, and the CLI keeps running.
 
 **Done when:** a bad column, a forced 429 and a network drop each end in either a recovered answer or a clean message, never a crash.
@@ -147,6 +147,7 @@ Lives inside the gateway. This is the most heavily graded part.
 
 ### Step 6: Observability
 
+- Started early (2026-10-30): plain-text logs in `logs/retail-agent.log` covering each question, each LLM call with its duration or error, and each SQL statement with its duration, rows and bytes.
 - A trace id for each turn, plus structured JSON logs at the two seams (the agent loop and the gateway): user, question, SQL, bytes scanned, rows, latency, retries, tokens, errors.
 
 **Done when:** the log lines for one turn explain how its answer was produced.
