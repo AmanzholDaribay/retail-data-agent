@@ -1,0 +1,64 @@
+# What the agent knows about the data: the real tables, cleaned up, with short notes
+# where a column name doesn't explain itself. Loaded once at startup into the system prompt.
+#
+# Direct identifiers in `users` (first/last name, email, street address, postal code,
+# latitude/longitude) are left out on purpose. Leaving them out is not enforcement:
+# step 3 blocks them in the query gateway.
+
+dataset: bigquery-public-data.thelook_ecommerce
+
+tables:
+  orders:
+    description: One row per customer order.
+    columns:
+      order_id: {type: INT64}
+      user_id: {type: INT64, description: Joins users.id}
+      status: {type: STRING, description: "One of Processing, Shipped, Complete, Cancelled, Returned"}
+      gender: {type: STRING, description: "Customer gender, M or F"}
+      created_at: {type: TIMESTAMP, description: When the order was placed (UTC)}
+      shipped_at: {type: TIMESTAMP}
+      delivered_at: {type: TIMESTAMP}
+      returned_at: {type: TIMESTAMP}
+      num_of_item: {type: INT64, description: Number of items in the order}
+
+  order_items:
+    description: >-
+      One row per item sold. The main table for revenue:
+      revenue = SUM(sale_price) over items whose status is not Cancelled or Returned.
+    columns:
+      id: {type: INT64}
+      order_id: {type: INT64, description: Joins orders.order_id}
+      user_id: {type: INT64, description: Joins users.id}
+      product_id: {type: INT64, description: Joins products.id}
+      inventory_item_id: {type: INT64}
+      status: {type: STRING, description: "One of Processing, Shipped, Complete, Cancelled, Returned"}
+      created_at: {type: TIMESTAMP, description: When the item was ordered (UTC)}
+      shipped_at: {type: TIMESTAMP}
+      delivered_at: {type: TIMESTAMP}
+      returned_at: {type: TIMESTAMP}
+      sale_price: {type: FLOAT64, description: Price the customer paid for this item}
+
+  products:
+    description: Product catalog.
+    columns:
+      id: {type: INT64}
+      name: {type: STRING}
+      brand: {type: STRING}
+      category: {type: STRING}
+      department: {type: STRING, description: Men or Women}
+      cost: {type: FLOAT64, description: What the company paid; profit = sale_price - cost}
+      retail_price: {type: FLOAT64, description: List price; use order_items.sale_price for revenue}
+      sku: {type: STRING}
+      distribution_center_id: {type: INT64}
+
+  users:
+    description: Customers.
+    columns:
+      id: {type: INT64}
+      age: {type: INT64}
+      gender: {type: STRING, description: M or F}
+      city: {type: STRING}
+      state: {type: STRING}
+      country: {type: STRING}
+      traffic_source: {type: STRING, description: "How the customer found the store, e.g. Search, Organic, Email"}
+      created_at: {type: TIMESTAMP, description: When the customer signed up (UTC)}
