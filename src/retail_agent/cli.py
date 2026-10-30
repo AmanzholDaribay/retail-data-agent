@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,9 +41,24 @@ def main() -> None:
             logger.exception("Question failed")
             print(f"\n{_describe_failure(error)}\nDetails: {LOG_FILE}")
             continue
-        for sql in result.sql:
-            print(f"\n[SQL]\n{sql}")
-        print(f"\n{result.answer}")
+        for number, sql in enumerate(result.sql, start=1):
+            title = "SQL" if len(result.sql) == 1 else f"SQL {number} of {len(result.sql)}"
+            print(_block(title, sql, CYAN))
+        print(_block("ANSWER", result.answer, GREEN))
+
+
+CYAN = "36"
+GREEN = "32"
+# Colors only on a real terminal, and never when NO_COLOR is set (https://no-color.org).
+_USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+
+def _block(title: str, body: str, color: str) -> str:
+    """A titled block, e.g. `── SQL ────` then the body, with the title colored on a terminal."""
+    header = f"── {title} " + "─" * max(4, 40 - len(title))
+    if _USE_COLOR:
+        header = f"\033[1;{color}m{header}\033[0m"
+    return f"\n{header}\n{body.strip()}"
 
 
 def _configure_logging() -> None:
