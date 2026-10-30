@@ -25,8 +25,9 @@ class TurnResult:
 
 
 class App:
-    def __init__(self, agent: CompiledStateGraph) -> None:
+    def __init__(self, agent: CompiledStateGraph, schema_text: str) -> None:
         self._agent = agent
+        self.schema_text = schema_text  # the schema exactly as the LLM sees it in the system prompt
 
     def ask(self, question: str) -> TurnResult:
         logger.info("Question: %s", question)
@@ -72,6 +73,7 @@ def assemble(
 ) -> App:
     """Wire the app from its parts. Tests call this directly with fakes."""
     gateway = QueryGateway(database, settings.max_rows)
-    system_prompt = prompt_template.format(dialect=database.dialect, schema=schema.render())
+    schema_text = schema.render()
+    system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(model, [make_run_sql(gateway)], system_prompt)
-    return App(agent)
+    return App(agent, schema_text)

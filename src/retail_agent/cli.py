@@ -20,8 +20,10 @@ def main() -> None:
     settings = Settings()
     app = build_app(settings)
     logger.info("Started with model %s:%s", settings.llm_provider, settings.llm_model)
+    logger.info("Schema:\n%s", app.schema_text)
 
-    print(f"Retail data agent ({settings.llm_model}). Ask a question, or type 'exit' to quit.")
+    print(_block(f"SCHEMA ({settings.schema_path})", app.schema_text, MAGENTA))
+    print(f"\nRetail data agent ({settings.llm_model}). Ask a question, or type 'exit' to quit.")
     print(f"Logs: {LOG_FILE}")
     while True:
         try:
@@ -48,6 +50,7 @@ def main() -> None:
 
 
 CYAN = "36"
+MAGENTA = "35"
 GREEN = "32"
 # Colors only on a real terminal, and never when NO_COLOR is set (https://no-color.org).
 _USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
