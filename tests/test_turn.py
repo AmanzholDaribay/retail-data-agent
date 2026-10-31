@@ -44,6 +44,8 @@ def test_an_empty_result_tells_the_model_there_were_no_rows():
     assert tool_output_seen_by_model(model) == "The query returned no rows. Columns: brand, revenue"
 
 
+
+
 def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
     row = (
         date(2026, 9, 30),
@@ -230,3 +232,42 @@ def test_a_failing_model_fails_the_turn_and_is_logged(caplog):
 
     assert "LLM call failed" in caplog.text
     assert "503 UNAVAILABLE" in caplog.text
+
+
+def test_a_failing_model_falls_back_to_the_next_model_which_keeps_the_tools():
+    sql = f"SELECT brand FROM {PRODUCTS}"
+    quota_exceeded = RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+    model = ScriptedChatModel(script=[quota_exceeded, quota_exceeded])
+    fallback = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("Brand A.")])
+    database = FakeDatabase([QueryResult(columns=["brand"], rows=[("Brand A",)])])
+
+    result = assemble_app(model, database, fallback_models=(fallback,)).ask("Which brands are there?")
+
+    assert result.answer == "Brand A."
+    assert result.sql == [sql]
+    assert fallback.had_tools == [True, True]
+    # The primary is tried first on every call, so a busy model is used again once it recovers.
+    assert len(model.received) == 2
+
+
+def test_the_question_fails_when_every_model_fails(caplog):
+    model = ScriptedChatModel(script=[RuntimeError("503 UNAVAILABLE: model is busy")])
+    fallback = ScriptedChatModel(script=[RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")])
+
+    with caplog.at_level(logging.INFO, logger="retail_agent"), pytest.raises(RuntimeError, match="429"):
+        assemble_app(model, FakeDatabase([]), fallback_models=(fallback,)).ask("Anything")
+
+    assert caplog.text.count("LLM call failed") == 2
+
+
+def test_a_fallback_model_on_the_last_allowed_call_gets_no_tools():
+    sql = f"SELECT brand FROM {PRODUCTS}"
+    model = ScriptedChatModel(script=[run_sql_call(sql), RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")])
+    fallback = ScriptedChatModel(script=[AIMessage("Brand A, from the results so far.")])
+    database = FakeDatabase([QueryResult(columns=["brand"], rows=[("Brand A",)])])
+
+    result = assemble_app(model, database, fallback_models=(fallback,), max_llm_calls=2).ask("Which brands?")
+
+    assert result.answer == "Brand A, from the results so far."
+    assert fallback.had_tools == [False]
+    assert LAST_CALL_NOTE in fallback.received[0][0].text

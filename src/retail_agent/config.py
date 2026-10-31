@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     llm_provider: str = "google_genai"
     llm_model: str = "gemini-3.8-flash"
+    # Tried in order when a call to llm_model fails (e.g. 429 or 503). Same provider, so Gemini falls back to Gemini.
+    # In .env as a JSON list; [] turns the fallback off.
+    llm_fallback_models: list[str] = ["gemini-3.5-flash-lite"]
     # Fail fast on a busy or unreachable model: the Gemini client otherwise retries 6 times with no timeout.
     llm_timeout_seconds: float = 30
     llm_max_retries: int = 1

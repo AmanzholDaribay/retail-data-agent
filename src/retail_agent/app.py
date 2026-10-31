@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -95,11 +96,12 @@ def _current_turn(messages: list[BaseMessage]) -> list[BaseMessage]:
 def build_app(settings: Settings) -> App:
     """Build the app with the real model and database."""
     return assemble(
-        model=build_model(settings),
+        model=build_model(settings, settings.llm_model),
         database=BigQueryDatabase(settings.gcp_project, settings.max_bytes_billed),
         schema=load_schema(settings.schema_path),
         prompt_template=settings.prompt_path.read_text(),
         settings=settings,
+        fallback_models=[build_model(settings, name) for name in settings.llm_fallback_models],
     )
 
 
@@ -109,6 +111,7 @@ def assemble(
     schema: Schema,
     prompt_template: str,
     settings: Settings,
+    fallback_models: Sequence[BaseChatModel] = (),
 ) -> App:
     """Wire the app from its parts. Tests call this directly with fakes."""
     guard = QueryGuard(database.dialect, allowed_tables=[schema.qualified_name(table) for table in schema.tables])
@@ -116,6 +119,11 @@ def assemble(
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(
-        model, [make_run_sql(gateway)], system_prompt, settings.max_llm_calls, checkpointer=InMemorySaver()
+        model,
+        [make_run_sql(gateway)],
+        system_prompt,
+        settings.max_llm_calls,
+        checkpointer=InMemorySaver(),
+        fallback_models=fallback_models,
     )
     return App(agent, schema_text)

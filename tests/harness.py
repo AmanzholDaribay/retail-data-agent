@@ -13,14 +13,20 @@ ORDER_ITEMS = "`bigquery-public-data.thelook_ecommerce.order_items`"
 PRODUCTS = "`bigquery-public-data.thelook_ecommerce.products`"
 
 
-def assemble_app(model: ScriptedChatModel, database: FakeDatabase, **settings: Any) -> App:
-    """The real schema file and prompt template, with a fake model and database."""
+def assemble_app(
+    model: ScriptedChatModel,
+    database: FakeDatabase,
+    fallback_models: tuple[ScriptedChatModel, ...] = (),
+    **settings: Any,
+) -> App:
+    """The real schema file and prompt template, with fake models and a fake database."""
     return assemble(
         model=model,
         database=database,
         schema=load_schema(ROOT / "schema.yaml"),
         prompt_template=(ROOT / "prompts" / "system.md").read_text(),
         settings=Settings(gcp_project="test-project", **settings),
+        fallback_models=fallback_models,
     )
 
 

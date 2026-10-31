@@ -2,7 +2,13 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRequest, ModelResponse, hook_config
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelFallbackMiddleware,
+    ModelRequest,
+    ModelResponse,
+    hook_config,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -83,11 +89,17 @@ def build_agent(
     system_prompt: str,
     max_llm_calls: int,
     checkpointer: BaseCheckpointSaver,
+    fallback_models: Sequence[BaseChatModel] = (),
 ) -> CompiledStateGraph:
+    # The first middleware wraps the ones after it. CallBudget goes first so it changes the request once, and every
+    # model, the fallback too, gets it as changed. The other order works as well: a retry passes through CallBudget again.
+    middleware = [CallBudget(max_llm_calls)]
+    if fallback_models:
+        middleware.append(ModelFallbackMiddleware(*fallback_models))
     return create_agent(
         model,
         tools,
         system_prompt=system_prompt,
-        middleware=[CallBudget(max_llm_calls)],
+        middleware=middleware,
         checkpointer=checkpointer,
     )
