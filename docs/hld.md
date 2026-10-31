@@ -45,7 +45,7 @@ flowchart LR
     class confirm,report_tools,store,access,langsmith planned
 ```
 
-Dashed boxes are planned. The gateway box is built, but its guard, scoping and PII layers are planned (it passes queries through with a row cap today).
+Dashed boxes are planned. The gateway box is built with its guard and row cap; its brand scoping and PII layers are planned.
 
 ## Components
 
@@ -57,7 +57,7 @@ Dashed boxes are planned. The gateway box is built, but its guard, scoping and P
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |
 | Call budget | Limits a question to `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. The last allowed call gets no tools, so it answers from the results already fetched. | `agent.py` | built |
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
-| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. | `gateway.py` | built (pass-through + row cap) |
+| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, then a dry run against the byte limit, then the query. | `gateway.py`, `guard.py` | built (guard, byte limit, row cap); scoping and PII planned |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
 | Schema | `schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
 | Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time. | — | planned |
@@ -82,6 +82,9 @@ sequenceDiagram
     M-->>A: tool call run_sql(SELECT …)
     A->>T: SQL
     T->>G: run(sql)
+    G->>G: guard: one SELECT over the allowed tables
+    G->>B: dry run (free)
+    B-->>G: bytes it would scan
     G->>B: query, capped by maximum_bytes_billed
     B-->>G: rows
     G-->>T: at most MAX_ROWS rows
@@ -92,7 +95,7 @@ sequenceDiagram
     C-->>U: SQL block and answer block
 ```
 
-If the SQL fails, the error goes back to the model, which sends corrected SQL. Every round counts against the call budget, so a bad question can't loop or run up cost.
+If the guard or the dry run rejects the query, or BigQuery reports an error, the message goes back to the model, which sends corrected SQL. Every round counts against the call budget, so a bad question can't loop or run up cost.
 
 ## Key decisions
 
@@ -113,8 +116,8 @@ Each layer is enforced in code; the prompt is only the first line.
 |---|---|---|
 | Cost cap | `maximum_bytes_billed` on every BigQuery job. | built |
 | Row cap | At most `MAX_ROWS` rows (default 50) reach the model. | built |
-| Analysis only | The system prompt refuses off-topic requests and attempts to override instructions, reveal the prompt or change data. | planned |
-| Query guard | The parsed query must be a single SELECT over the 4 allowed tables. A dry run rejects anything above the byte limit before it costs anything. | planned |
+| Analysis only | The system prompt refuses off-topic requests and attempts to override instructions, reveal the prompt or change data. | built |
+| Query guard | The parsed query must be a single SELECT over the 4 allowed tables; DML, DDL, scripting, other tables and table functions are rejected. A free dry run rejects anything above the byte limit before it costs anything. | built |
 | Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. | planned |
 | PII protection | PII columns are tagged in `schema.yaml` and blocked based on the parsed query, not name matching; results are checked again before rows reach the model. Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. | planned |
 | Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. | planned |

@@ -25,11 +25,15 @@ class Schema:
     dataset: str
     tables: list[Table]
 
+    def qualified_name(self, table: Table) -> str:
+        """The name to query the table by, e.g. bigquery-public-data.thelook_ecommerce.orders."""
+        return f"{self.dataset}.{table.name}"
+
     def render(self) -> str:
         """Render as a compact text block for the system prompt."""
         blocks = []
         for table in self.tables:
-            header = f"Table `{self.dataset}.{table.name}`"
+            header = f"Table `{self.qualified_name(table)}`"
             if table.description:
                 header += f": {table.description}"
             lines = [header]

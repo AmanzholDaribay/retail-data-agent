@@ -59,11 +59,15 @@ class FakeDatabase:
     A result can also be an exception, which the database raises instead of returning rows.
     """
 
-    dialect = "fakesql"
+    dialect = "bigquery"  # a dialect sqlglot knows, so the guard can parse the fake's queries
 
-    def __init__(self, results: list[QueryResult | Exception]) -> None:
+    def __init__(self, results: list[QueryResult | Exception], estimated_bytes: int = 0) -> None:
         self._results = list(results)
+        self._estimated_bytes = estimated_bytes
         self.executed: list[str] = []
+
+    def estimate_bytes(self, sql: str) -> int:
+        return self._estimated_bytes
 
     def execute(self, sql: str, max_rows: int) -> QueryResult:
         self.executed.append(sql)

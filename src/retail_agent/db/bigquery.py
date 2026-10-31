@@ -48,6 +48,9 @@ class BigQueryDatabase:
     def __init__(self, project: str, max_bytes_billed: int) -> None:
         self._client = bigquery.Client(project=project)
         self._job_config = bigquery.QueryJobConfig(maximum_bytes_billed=max_bytes_billed)
+        # Free: BigQuery validates and plans the query without running it. The cache is off, or a
+        # cached query would report 0 bytes.
+        self._dry_run_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
 
     def execute(self, sql: str, max_rows: int) -> QueryResult:
         try:
@@ -65,3 +68,13 @@ class BigQueryDatabase:
             total_rows=result.total_rows,
             bytes_processed=job.total_bytes_processed,
         )
+
+    def estimate_bytes(self, sql: str) -> int:
+        try:
+            job = self._client.query(sql, job_config=self._dry_run_config)
+        except GoogleAPICallError as error:
+            query_error = as_query_error(error)
+            if query_error is None:
+                raise
+            raise query_error from error
+        return job.total_bytes_processed or 0

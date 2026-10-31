@@ -27,3 +27,7 @@ class Database(Protocol):
     def execute(self, sql: str, max_rows: int) -> QueryResult:
         """Run one query and return at most `max_rows` rows. Raises QueryError if the engine rejects it."""
         ...
+
+    def estimate_bytes(self, sql: str) -> int:
+        """The bytes the query would scan, found without running it. Raises QueryError if the engine rejects it."""
+        ...

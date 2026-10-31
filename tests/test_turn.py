@@ -1,34 +1,18 @@
 import logging
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from fakes import FakeDatabase, ScriptedChatModel, run_sql_call
+from harness import ORDER_ITEMS, PRODUCTS, assemble_app, tool_output_seen_by_model
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from retail_agent.agent import LAST_CALL_NOTE
-from retail_agent.app import App, assemble
-from retail_agent.config import Settings
 from retail_agent.db.base import QueryError, QueryResult
-from retail_agent.schema import load_schema
-
-ROOT = Path(__file__).parents[1]
-
-
-def assemble_app(model: ScriptedChatModel, database: FakeDatabase, **settings: object) -> App:
-    """The real schema file and prompt template, with a fake model and database."""
-    return assemble(
-        model=model,
-        database=database,
-        schema=load_schema(ROOT / "schema.yaml"),
-        prompt_template=(ROOT / "prompts" / "system.md").read_text(),
-        settings=Settings(gcp_project="test-project", **settings),
-    )
 
 
 def test_answers_a_question_with_the_sql_it_ran():
-    sql = "SELECT brand, SUM(sale_price) AS revenue FROM order_items GROUP BY brand"
+    sql = f"SELECT brand, SUM(sale_price) AS revenue FROM {ORDER_ITEMS} GROUP BY brand"
     model = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("Brand A leads with $100.")])
     database = FakeDatabase([QueryResult(columns=["brand", "revenue"], rows=[("Brand A", 100.0)])])
 
@@ -39,15 +23,8 @@ def test_answers_a_question_with_the_sql_it_ran():
     assert database.executed == [sql]
 
 
-def tool_output_seen_by_model(model: ScriptedChatModel) -> str:
-    """The run_sql output, as the model received it on its second call."""
-    message = model.received[1][-1]
-    assert isinstance(message, ToolMessage)
-    return message.text
-
-
 def test_a_result_cut_off_at_max_rows_tells_the_model_how_many_rows_there_were():
-    model = ScriptedChatModel(script=[run_sql_call("SELECT n FROM numbers"), AIMessage("Partial answer.")])
+    model = ScriptedChatModel(script=[run_sql_call(f"SELECT id FROM {ORDER_ITEMS}"), AIMessage("Partial answer.")])
     database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,) for n in range(1, 121)])])
 
     assemble_app(model, database).ask("List every number")
@@ -59,7 +36,7 @@ def test_a_result_cut_off_at_max_rows_tells_the_model_how_many_rows_there_were()
 
 
 def test_an_empty_result_tells_the_model_there_were_no_rows():
-    model = ScriptedChatModel(script=[run_sql_call("SELECT brand FROM products WHERE 1 = 0"), AIMessage("Nothing.")])
+    model = ScriptedChatModel(script=[run_sql_call(f"SELECT brand FROM {PRODUCTS} WHERE 1 = 0"), AIMessage("Nothing.")])
     database = FakeDatabase([QueryResult(columns=["brand", "revenue"], rows=[])])
 
     assemble_app(model, database).ask("Revenue of a brand that doesn't exist?")
@@ -77,7 +54,7 @@ def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
         12.5,
         None,
     )
-    model = ScriptedChatModel(script=[run_sql_call("SELECT ..."), AIMessage("Done.")])
+    model = ScriptedChatModel(script=[run_sql_call("SELECT 1"), AIMessage("Done.")])
     database = FakeDatabase([QueryResult(columns=["d", "ts", "dt", "big", "price", "f", "missing"], rows=[row])])
 
     assemble_app(model, database).ask("Show one row")
@@ -88,8 +65,8 @@ def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
 
 
 def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
-    bad_sql = "SELECT revenue FROM order_items"
-    good_sql = "SELECT SUM(sale_price) AS revenue FROM order_items"
+    bad_sql = f"SELECT revenue FROM {ORDER_ITEMS}"
+    good_sql = f"SELECT SUM(sale_price) AS revenue FROM {ORDER_ITEMS}"
     model = ScriptedChatModel(
         script=[run_sql_call(bad_sql), run_sql_call(good_sql), AIMessage("Revenue is $100.")]
     )
@@ -151,7 +128,7 @@ def test_a_model_that_calls_a_tool_on_its_last_call_ends_at_the_call_budget():
 
 
 def test_a_follow_up_question_sees_the_earlier_turn():
-    sql = "SELECT brand, SUM(sale_price) AS revenue FROM order_items GROUP BY brand"
+    sql = f"SELECT brand, SUM(sale_price) AS revenue FROM {ORDER_ITEMS} GROUP BY brand"
     model = ScriptedChatModel(
         script=[run_sql_call(sql), AIMessage("Brand A leads with $100."), AIMessage("The month before, Brand B led.")]
     )
@@ -224,7 +201,7 @@ def test_model_sees_the_schema_and_dialect_in_its_system_message():
 
     system_message = model.received[0][0]
     assert isinstance(system_message, SystemMessage)
-    assert "fakesql SQL" in system_message.text
+    assert "bigquery SQL" in system_message.text
     for table in ["orders", "order_items", "products", "users"]:
         assert f"`bigquery-public-data.thelook_ecommerce.{table}`" in system_message.text
 
