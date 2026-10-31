@@ -169,7 +169,7 @@ Lives inside the gateway. This is the most heavily graded part.
 
 The docs grow with each step, and this step finishes them. Start the HLD outline right after step 1 and fill it in as each step lands: grading weights the design and the write-up most, so they shouldn't be squeezed in at the end.
 
-- HLD with a Mermaid architecture diagram.
+- HLD with a Mermaid architecture diagram: [hld.md](hld.md) (first version 2026-10-31, decided parts only).
 - Technical write-up: cloud services, LLM and framework choice with reasoning **and the author's level of experience with the framework** (the brief asks for it), data flow, error handling, setup with an example run, and how each requirement is met.
 - Design for the design-only parts: Golden Knowledge bucket (how it's updated over time, and how relevant trios reach the model at question time), learning loop (user level: tables vs. bullets, depth, charts vs. text; system level: learning from past interactions), QA and evals (before deployment, checking that reports answer the user's intent, UX), persona and tone updates without redeploying.
 - Extensibility: how a new capability (charts, emailing reports, web search for trends) plugs in as another tool, behind the same policy layers.
