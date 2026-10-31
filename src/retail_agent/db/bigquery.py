@@ -62,6 +62,6 @@ class BigQueryDatabase:
         return QueryResult(
             columns=[field.name for field in result.schema],
             rows=rows,
-            truncated=(result.total_rows or 0) > len(rows),
+            total_rows=result.total_rows,
             bytes_processed=job.total_bytes_processed,
         )

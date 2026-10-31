@@ -6,8 +6,13 @@ from typing import Any, Protocol
 class QueryResult:
     columns: list[str]
     rows: list[tuple[Any, ...]]
-    truncated: bool = False
+    total_rows: int | None = None  # rows the query produced, before the row cap; None when unknown
     bytes_processed: int | None = None
+
+    @property
+    def truncated(self) -> bool:
+        """Whether rows were cut off. Derived from total_rows, so the two can't disagree."""
+        return self.total_rows is not None and self.total_rows > len(self.rows)
 
 
 class QueryError(Exception):

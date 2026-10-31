@@ -1,4 +1,6 @@
 import logging
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -34,6 +36,54 @@ def test_answers_a_question_with_the_sql_it_ran():
     assert result.answer == "Brand A leads with $100."
     assert result.sql == [sql]
     assert database.executed == [sql]
+
+
+def tool_output_seen_by_model(model: ScriptedChatModel) -> str:
+    """The run_sql output, as the model received it on its second call."""
+    message = model.received[1][-1]
+    assert isinstance(message, ToolMessage)
+    return message.text
+
+
+def test_a_result_cut_off_at_max_rows_tells_the_model_how_many_rows_there_were():
+    model = ScriptedChatModel(script=[run_sql_call("SELECT n FROM numbers"), AIMessage("Partial answer.")])
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,) for n in range(1, 121)])])
+
+    assemble_app(model, database).ask("List every number")
+
+    lines = tool_output_seen_by_model(model).splitlines()
+    assert lines[0] == "n"
+    assert lines[1:51] == [str(n) for n in range(1, 51)]
+    assert lines[51:] == ["Note: only the first 50 rows are shown. The query returned 120 rows."]
+
+
+def test_an_empty_result_tells_the_model_there_were_no_rows():
+    model = ScriptedChatModel(script=[run_sql_call("SELECT brand FROM products WHERE 1 = 0"), AIMessage("Nothing.")])
+    database = FakeDatabase([QueryResult(columns=["brand", "revenue"], rows=[])])
+
+    assemble_app(model, database).ask("Revenue of a brand that doesn't exist?")
+
+    assert tool_output_seen_by_model(model) == "The query returned no rows. Columns: brand, revenue"
+
+
+def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
+    row = (
+        date(2026, 9, 30),
+        datetime(2026, 9, 30, 14, 5, tzinfo=timezone.utc),
+        datetime(2026, 9, 30, 14, 5),
+        Decimal("1E+3"),
+        Decimal("1234.5000"),
+        12.5,
+        None,
+    )
+    model = ScriptedChatModel(script=[run_sql_call("SELECT ..."), AIMessage("Done.")])
+    database = FakeDatabase([QueryResult(columns=["d", "ts", "dt", "big", "price", "f", "missing"], rows=[row])])
+
+    assemble_app(model, database).ask("Show one row")
+
+    assert tool_output_seen_by_model(model).splitlines()[1] == (
+        "2026-09-30 | 2026-09-30 14:05:00 UTC | 2026-09-30 14:05:00 | 1000 | 1234.5000 | 12.5 | NULL"
+    )
 
 
 def test_a_failed_query_goes_back_to_the_model_which_fixes_it():

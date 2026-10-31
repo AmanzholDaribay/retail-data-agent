@@ -9,15 +9,15 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 
 **Blocked by:** 01 (Walking skeleton)
 
-**Status:** ready-for-agent
+**Status:** built 2026-10-31; the manual check on real BigQuery is still to do
 
-- [ ] The adapter returns at most `max_rows` rows and sets `truncated` when more exist; it decides how to detect that, for example by fetching one extra row.
-- [ ] The gateway applies `MAX_ROWS` from settings (default 50).
-- [ ] When the result was cut off, the `run_sql` output ends with a footer saying only the first N rows are shown and more exist.
-- [ ] An empty result gives an explicit "query returned no rows" message.
-- [ ] Dates, timestamps and decimals become plain strings in the tool output.
-- [ ] The system prompt tells the model to say when a result was cut off or empty.
-- [ ] Offline tests through **assemble** pass:
+- [x] The adapter returns at most `max_rows` rows and sets `truncated` when more exist; it decides how to detect that, for example by fetching one extra row. Built from BigQuery's own `total_rows`, which `QueryResult` now carries so the note can give the real count; `truncated` is a property derived from it, so the two can't disagree. Formatting lives in `result_format.py`.
+- [x] The gateway applies `MAX_ROWS` from settings (default 50).
+- [x] When the result was cut off, the `run_sql` output ends with a footer saying only the first N rows are shown and more exist.
+- [x] An empty result gives an explicit "query returned no rows" message.
+- [x] Dates, timestamps and decimals become plain strings in the tool output.
+- [x] The system prompt tells the model to say when a result was cut off or empty.
+- [x] Offline tests through **assemble** pass:
   - the model's next input contains the rows as a compact table;
   - with more rows than `MAX_ROWS`, the model sees exactly `MAX_ROWS` rows plus the footer;
   - an empty result shows the model the "no rows" message;

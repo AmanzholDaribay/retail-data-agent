@@ -1,3 +1,4 @@
+from dataclasses import replace
 from itertools import count
 from typing import Any
 
@@ -62,4 +63,7 @@ class FakeDatabase:
         result = self._results.pop(0)
         if isinstance(result, Exception):
             raise result
+        # Cap rows the way the real adapter does.
+        if len(result.rows) > max_rows:
+            return replace(result, rows=result.rows[:max_rows], total_rows=len(result.rows))
         return result
