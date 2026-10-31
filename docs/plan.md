@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: steps 1 and 2 done (2026-10-31); step 3 is next. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early, after briefly being dropped, because the client named it as the default; LangSmith is just configuration (step 6). The main build work left is step 3 (brand access) and step 5 (reports). Last updated 2026-10-31.
+Status: steps 1 and 2 done (2026-10-31); step 3 in progress: `--user` and brand scoping are built, the `num_of_item` leak and PII protection are next. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early, after briefly being dropped, because the client named it as the default; LangSmith is just configuration (step 6). The main build work left is step 3 (PII protection) and step 5 (reports). Last updated 2026-10-31.
 
 ## How we build
 
@@ -141,7 +141,7 @@ The SQL checks live inside the gateway.
 Lives inside the gateway. This is the most heavily graded part.
 
 - Identity: the user is chosen at CLI start (e.g. `--user`). A config file maps users to brands, and the CEO gets all brands. **Built 2026-10-31:** `--user` (required) picks a name from `users.yaml` (`USERS_PATH`), where each user has a list of brands or `all`. `users.py` loads it with pydantic, so a bad file (an empty list, a single name instead of a list, a typo in a key) or an unknown user stops the CLI at startup with a clear message. The `User` goes through `build_app` → `assemble` into the `QueryGateway`, ready for scoping; nothing is filtered yet. `--user` stands in for real sign-in, which in production would come from the company's SSO.
-- Scoping is enforced in the data layer, not the prompt. Table references are rewritten to brand-filtered versions, so orders and users are reachable only through in-scope products. (Choice to make here: rewrite the SQL or use scoped views.)
+- Scoping is enforced in the data layer, not the prompt. Table references are rewritten to brand-filtered versions, so orders and users are reachable only through in-scope products. **Decided and built 2026-10-31: rewrite the SQL** ([brand-scoping.html](brand-scoping.html)). `brand_scope.py` (`BrandScope.apply`) runs in the gateway right after the guard. It swaps every table in the parsed query for a filtered version (`_brand_scoped_products` keeps only the user's brands; `order_items`, `orders` and `users` keep rows linked to those products) and puts those filtered tables first in the query's WITH clause. The CEO's queries run unchanged. Scoped views were put aside: they need datasets and views set up in a GCP project, kept in step with `users.yaml`, and they can't be tested offline. Still open: `orders.num_of_item` counts every item in an order, including other brands' items, so it leaks a little for scoped users. Block it or recount it from scoped `order_items`.
 - PII columns are tagged in `schema.yaml`, resolved from the parsed query rather than matched by name, and blocked. Results are checked again before rows reach the model.
 - `user_id` is replaced by a salted-hash pseudonym that stays stable across turns.
 - Demographic columns (city, state, country, age, gender, traffic source) are allowed only in aggregated queries.
@@ -205,6 +205,6 @@ The docs grow with each step, and this step finishes them. Start the HLD outline
 
 ## Open decisions
 
-- **Scoping mechanism.** Rewrite the SQL or use scoped views. Decide in step 3.
+- ~~**Scoping mechanism.**~~ Decided 2026-10-31: rewrite the SQL (see step 3).
 - **Measuring group size.** How the gateway knows how many customers are behind an aggregate row. Decide in step 3.
 - **Call budget for reports.** If a report or a multi-step question doesn't fit in 5 LLM calls even with parallel queries, ask Harry whether report requests may use more (e.g. 8), or split the report across turns. Decide in step 5.

@@ -1,9 +1,9 @@
 import logging
 import time
 
+from retail_agent.brand_scope import BrandScope
 from retail_agent.db.base import Database, QueryResult
 from retail_agent.guard import QueryGuard, QueryRejected
-from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
 
@@ -11,25 +11,27 @@ logger = logging.getLogger(__name__)
 class QueryGateway:
     """The only path from the agent to the database.
 
-    Every query passes the guard before it reaches the database, and results are capped at `max_rows`.
-    Brand scoping and PII masking plug in here in later steps.
+    Every query passes the guard, is limited to the user's brands, and has its size checked before it reaches
+    the database. Results are capped at `max_rows`. PII masking plugs in here later in step 3.
     """
 
-    def __init__(self, database: Database, guard: QueryGuard, max_rows: int, max_bytes: int, user: User) -> None:
+    def __init__(self, database: Database, guard: QueryGuard, max_rows: int, max_bytes: int, scope: BrandScope) -> None:
         self._database = database
         self._guard = guard
         self._max_rows = max_rows
         self._max_bytes = max_bytes
-        # Whose question this is. Brand scoping (step 3) limits every query to user.brands.
-        self._user = user
+        self._scope = scope
 
     def run(self, sql: str) -> QueryResult:
         logger.info("SQL: %s", sql)
         started = time.monotonic()
         try:
             self._guard.check(sql)
-            self._check_bytes(sql)
-            result = self._database.execute(sql, self._max_rows)
+            scoped_sql = self._scope.apply(sql)
+            if scoped_sql != sql:
+                logger.info("Scoped SQL: %s", scoped_sql)
+            self._check_bytes(scoped_sql)
+            result = self._database.execute(scoped_sql, self._max_rows)
         except QueryRejected as error:
             logger.warning("SQL rejected: %s", error)
             raise

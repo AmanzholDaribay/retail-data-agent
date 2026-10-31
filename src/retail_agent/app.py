@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from retail_agent.agent import BUDGET_REACHED, build_agent
+from retail_agent.brand_scope import BrandScope
 from retail_agent.config import Settings
 from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
@@ -118,7 +119,8 @@ def assemble(
 ) -> App:
     """Wire the app from its parts. Tests call this directly with fakes."""
     guard = QueryGuard(database.dialect, allowed_tables=[schema.qualified_name(table) for table in schema.tables])
-    gateway = QueryGateway(database, guard, settings.max_rows, settings.max_bytes_billed, user)
+    scope = BrandScope(database.dialect, schema.dataset, user.brands)
+    gateway = QueryGateway(database, guard, settings.max_rows, settings.max_bytes_billed, scope)
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(

@@ -24,7 +24,7 @@ class QueryGuard:
         _require_select(statement)
         for table in statement.find_all(exp.Table):
             self._reject_table_function(table)
-            if _is_with_name(table, statement):
+            if is_with_name(table, statement):
                 continue
             self._require_allowed_table(table)
 
@@ -45,7 +45,7 @@ class QueryGuard:
             raise QueryRejected(f"Read only from tables. Table functions such as {function} are not allowed.")
 
     def _require_allowed_table(self, table: exp.Table) -> None:
-        name = _qualified_name(table)
+        name = qualified_name(table)
         if name not in self._allowed_tables:
             allowed = ", ".join(f"`{allowed_name}`" for allowed_name in self._allowed_tables)
             raise QueryRejected(f"Table `{name}` is not allowed. Use only these tables: {allowed}.")
@@ -57,7 +57,7 @@ def _require_select(statement: exp.Expr) -> None:
         raise QueryRejected("Only SELECT queries are allowed.")
 
 
-def _is_with_name(table: exp.Table, statement: exp.Expr) -> bool:
+def is_with_name(table: exp.Table, statement: exp.Expr) -> bool:
     """Whether `table` is a name the query defines with WITH, not a real table.
 
     Only one-part names count: a WITH name spelled like a table path only covers its own query,
@@ -68,5 +68,5 @@ def _is_with_name(table: exp.Table, statement: exp.Expr) -> bool:
     return table.name in {cte.alias_or_name for cte in statement.find_all(exp.CTE)}
 
 
-def _qualified_name(table: exp.Table) -> str:
+def qualified_name(table: exp.Table) -> str:
     return ".".join(part for part in (table.catalog, table.db, table.name) if part)
