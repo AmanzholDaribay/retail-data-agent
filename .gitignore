@@ -14,3 +14,6 @@ wheels/
 
 # Agent logs
 logs/
+
+# Editor settings
+.idea/
