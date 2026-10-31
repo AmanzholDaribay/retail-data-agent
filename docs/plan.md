@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: step 1 in progress (tickets 01, 03 and 04 done; 02 and the sign-off 07 open). Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. Last updated 2026-10-31.
+Status: step 1 done (signed off 2026-10-31); step 2 is next. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. Last updated 2026-10-31.
 
 ## How we build
 
@@ -79,7 +79,7 @@ Settled 2026-10-29. Full spec, with user stories and test cases: [specs/step-1-c
 | 5 | **Layering:** `run_sql` tool → QueryGateway (policy; in step 1 it only passes queries through and caps rows) → database adapter (driver only). The tool never calls the adapter directly. Safety lives in the gateway; middleware is only for agent-level concerns. | **Safety in middleware:** it would depend on the framework, and LangChain's PII middleware matches patterns, which Harry called not robust enough. |
 | 6 | **Schema:** `schema.yaml` is the schema in cleaner form: tables, columns and types, plus short notes where a name doesn't explain itself (status values, `sale_price` vs `retail_price`, joins). It holds the dataset name too. It is loaded once at startup and rendered into the system prompt, and checked once against the live tables through `describe_tables()` (BigQuery metadata API, no bytes scanned). A missing table or column fails fast (ticket 05, now optional in step 4). Step 3 adds `pii` and `aggregate_only` tags to the same file. | **Reading the schema from the database:** column names without meaning lead to worse SQL. **Per-question `list_tables` / `get_schema` tools:** an extra round trip and extra tokens on every question. |
 | 7 | **Prompt:** the template `prompts/system.md`, filled in with the schema and the dialect. | **A string in the code:** persona and tone changes would need a code change. |
-| 8 | **Tool contract:** on success, a compact table capped at `MAX_ROWS` (default 50), with a footer when the result was cut off, and dates and decimals as plain strings. On failure, `Error: <message>` goes back to the model so it can fix the SQL. A budget of 5 LLM calls per question (a normal turn uses 2: one to write SQL, one to answer) keeps a turn inside Gemini's free-tier limits; reaching it ends the turn with a clear message (ticket 03). | **JSON rows:** noticeably more tokens. **Raising the exception:** bad SQL would crash the turn. |
+| 8 | **Tool contract:** on success, a compact table capped at `MAX_ROWS` (default 50), with a footer when the result was cut off, and dates and decimals as plain strings. On failure, `Error: <message>` goes back to the model so it can fix the SQL. A budget of 5 LLM calls per question (a normal turn uses 2: one to write SQL, one to answer) keeps a turn inside Gemini's free-tier limits; the last allowed call gets no tools, so the question ends with an answer from the results so far (changed at sign-off, see below). | **JSON rows:** noticeably more tokens. **Raising the exception:** bad SQL would crash the turn. |
 | 9 | **Memory:** `InMemorySaver` checkpointer with one `thread_id` per CLI run. Follow-ups work, and the step 5 delete confirmation (a LangGraph interrupt) needs a checkpointer anyway. | **No memory:** breaks follow-ups. **Persistent memory:** not needed yet. |
 | 10 | **CLI:** a `retail-agent` console script running a plain `input()` loop. It prints the answer and the SQL that ran; `exit` or Ctrl-D quits. `--user` arrives in step 3. | **Typer / Rich:** not needed yet. |
 | 11 | **Config:** `pydantic-settings` reading `.env`: `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`, `MAX_LLM_CALLS`, `GCP_PROJECT`, `MAX_BYTES_BILLED`, `MAX_ROWS`, `SCHEMA_PATH`, `PROMPT_PATH`, plus the provider API key (`GOOGLE_API_KEY` by default). The dataset name lives only in `schema.yaml`. BigQuery auth uses Application Default Credentials (`gcloud auth application-default login`); `GOOGLE_APPLICATION_CREDENTIALS` also works. Queries are billed to `GCP_PROJECT`. | |
@@ -106,6 +106,11 @@ src/retail_agent/
 tests/
   fakes.py               # FakeDatabase, scripted fake chat model
 ```
+
+**Differences from the spec, found at sign-off (2026-10-31):**
+- **The last allowed call always answers.** The spec ended a question that reached the budget with "I couldn't finish…", which threw away the results already fetched. Now the last allowed call gets no tools, an added note ("answer now from the results you already have, and say plainly what is missing"), and the turn's tool calls and results rewritten as plain text for that one request. Gemini was seen calling `run_sql` with `tool_choice="none"`, and even with no tools declared, by copying the tool calls in the history; the plain-text rewrite stops that. The old message stays as a backstop if a model calls a tool anyway.
+- **Cut-off lists.** The prompt now says to answer a list from the rows shown and give the total, and to aggregate in SQL only for totals, averages and rankings. Before, a full-list request made the model re-query until the budget ran out.
+- **Live sign-off ran on `gemini-3.5-flash-lite`.** The default `gemini-3.8-flash` timed out (504) twice at the 30 s limit, and `gemini-3.6-flash` ran out of its free-tier quota: **20 requests per day per model**. At 2–5 calls per question, that is roughly 4–10 questions per model per day, which makes the step 4 Gemini fallback more important and belongs in the README.
 
 **Done when:** asking "What were the top 5 brands by revenue last month?" returns a sensible answer and the SQL behind it, on Gemini with a free AI Studio key, in at most 5 LLM calls.
 

@@ -24,20 +24,27 @@ class ScriptedChatModel(BaseChatModel):
     """Replies with a fixed script of messages and records every message list it was sent.
 
     A script entry can also be an exception, which the model raises instead of replying.
+    It replies with its script whether or not it was given tools, so it can play a model that
+    calls a tool it doesn't have.
     """
 
     script: list[Any]  # AIMessage or Exception; Any stops pydantic coercing exceptions into messages
     received: list[list[BaseMessage]] = Field(default_factory=list)
+    had_tools: list[bool] = Field(default_factory=list)  # whether each call was given tools
+    tools_bound: bool = False
 
     @property
     def _llm_type(self) -> str:
         return "scripted"
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "ScriptedChatModel":
+        self.tools_bound = bool(tools)
         return self
 
     def _generate(self, messages: list[BaseMessage], stop: Any = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
         self.received.append(list(messages))
+        self.had_tools.append(self.tools_bound)
+        self.tools_bound = False  # the agent binds tools again before every call that has them
         if len(self.received) > len(self.script):
             raise AssertionError(f"Model was called {len(self.received)} times, but the script has {len(self.script)} replies")
         reply = self.script[len(self.received) - 1]

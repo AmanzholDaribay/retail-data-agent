@@ -7,6 +7,7 @@ import pytest
 from fakes import FakeDatabase, ScriptedChatModel, run_sql_call
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
+from retail_agent.agent import LAST_CALL_NOTE
 from retail_agent.app import App, assemble
 from retail_agent.config import Settings
 from retail_agent.db.base import QueryError, QueryResult
@@ -15,14 +16,14 @@ from retail_agent.schema import load_schema
 ROOT = Path(__file__).parents[1]
 
 
-def assemble_app(model: ScriptedChatModel, database: FakeDatabase) -> App:
+def assemble_app(model: ScriptedChatModel, database: FakeDatabase, **settings: object) -> App:
     """The real schema file and prompt template, with a fake model and database."""
     return assemble(
         model=model,
         database=database,
         schema=load_schema(ROOT / "schema.yaml"),
         prompt_template=(ROOT / "prompts" / "system.md").read_text(),
-        settings=Settings(gcp_project="test-project"),
+        settings=Settings(gcp_project="test-project", **settings),
     )
 
 
@@ -109,7 +110,34 @@ def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
     assert database.executed == [bad_sql, good_sql]
 
 
-def test_a_model_that_never_stops_ends_at_the_call_budget():
+def test_the_last_allowed_call_answers_from_the_results_so_far():
+    script = [run_sql_call(f"SELECT {n}") for n in range(1, 5)] + [AIMessage("Partial answer from four queries.")]
+    model = ScriptedChatModel(script=script)
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,)]) for n in range(1, 5)])
+
+    result = assemble_app(model, database).ask("Count forever")
+
+    assert model.had_tools == [True, True, True, True, False]
+    system_messages = [received[0].text for received in model.received]
+    assert all(LAST_CALL_NOTE not in text for text in system_messages[:4])
+    assert system_messages[4].endswith(LAST_CALL_NOTE)
+    assert result.answer == "Partial answer from four queries."
+
+
+def test_the_last_allowed_call_sees_earlier_queries_and_results_as_plain_text():
+    script = [run_sql_call("SELECT 1"), AIMessage("One.")]
+    model = ScriptedChatModel(script=script)
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[(1,)])])
+
+    assemble_app(model, database, max_llm_calls=2).ask("Count to one")
+
+    last_call = model.received[1]
+    assert not any(isinstance(message, ToolMessage) for message in last_call)
+    assert not any(isinstance(message, AIMessage) and message.tool_calls for message in last_call)
+    assert [message.text for message in last_call[2:]] == ["I ran:\nrun_sql:\nSELECT 1", "[run_sql result]\nn\n1"]
+
+
+def test_a_model_that_calls_a_tool_on_its_last_call_ends_at_the_call_budget():
     model = ScriptedChatModel(script=[run_sql_call(f"SELECT {n}") for n in range(1, 7)])
     database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,)]) for n in range(1, 7)])
 
@@ -120,17 +148,6 @@ def test_a_model_that_never_stops_ends_at_the_call_budget():
     assert result.answer == (
         "I couldn't finish this question within 5 model calls. Try asking it in a simpler or more specific way."
     )
-
-
-def test_an_answer_on_the_last_allowed_call_is_returned():
-    script = [run_sql_call(f"SELECT {n}") for n in range(1, 5)] + [AIMessage("Done after four queries.")]
-    model = ScriptedChatModel(script=script)
-    database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,)]) for n in range(1, 5)])
-
-    result = assemble_app(model, database).ask("Count to four")
-
-    assert len(model.received) == 5
-    assert result.answer == "Done after four queries."
 
 
 def test_a_follow_up_question_sees_the_earlier_turn():

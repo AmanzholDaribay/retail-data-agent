@@ -55,7 +55,7 @@ Dashed boxes are planned. The gateway box is built, but its guard, scoping and P
 | App | One conversation per CLI run. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
 | Agent loop | The model ↔ tools loop, from LangChain `create_agent` (LangGraph underneath). Remembers earlier turns through a checkpointer. | `agent.py` | built |
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |
-| Call budget | Ends a question after `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. | `agent.py` | built |
+| Call budget | Limits a question to `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. The last allowed call gets no tools, so it answers from the results already fetched. | `agent.py` | built |
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
 | Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. | `gateway.py` | built (pass-through + row cap) |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
