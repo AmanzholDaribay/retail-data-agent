@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How Middleware Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One reading column: the summary first, then the loop with its hooks, the hook table, and CallBudget as the example. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --hook: #5b4f8a;        /* middleware hooks */
+  --hook-soft: #ece9f5;
+  --llm: #a35a12;         /* the LLM */
+  --llm-soft: #f8ecdf;
+  --tool: #1f6f8b;        /* tools: run_sql */
+  --tool-soft: #e3f0f4;
+  --stop: #a3352b;
+  --stop-soft: #f8e5e2;
+  --ok: #2c6b3f;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --hook: #b3a8e6; --hook-soft: #28243d; --llm: #e7a464; --llm-soft: #3a2a1a;
+    --tool: #6cc0dc; --tool-soft: #16323d; --stop: #f08a7e; --stop-soft: #3a1d1a; --ok: #7fcf96;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --hook: #b3a8e6; --hook-soft: #28243d; --llm: #e7a464; --llm-soft: #3a2a1a;
+  --tool: #6cc0dc; --tool-soft: #16323d; --stop: #f08a7e; --stop-soft: #3a1d1a; --ok: #7fcf96;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 900px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* summary */
+.short { border-left: 4px solid var(--hook); background: var(--hook-soft); border-radius: 0 10px 10px 0; padding: 18px 20px; display: grid; gap: 12px; }
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.short li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.short .k { font: 600 0.8rem var(--font-mono); color: var(--hook); background: var(--surface); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+
+/* loop */
+.loop { display: grid; gap: 0; justify-items: center; }
+.box { width: min(100%, 360px); border: 1.5px solid var(--c, var(--line)); background: var(--c-soft, var(--surface)); border-radius: 8px; padding: 9px 14px; text-align: center; }
+.box small { display: block; color: var(--muted); font-size: 0.8rem; }
+.box b { font-family: var(--font-mono); font-size: 0.9rem; color: var(--c, var(--fg)); }
+.hook { --c: var(--hook); --c-soft: var(--hook-soft); border-style: dashed; }
+.llm  { --c: var(--llm);  --c-soft: var(--llm-soft); }
+.tool { --c: var(--tool); --c-soft: var(--tool-soft); }
+.down { width: 0; height: 18px; border-left: 1.5px solid var(--line); position: relative; }
+.down::after { content: ""; position: absolute; bottom: -1px; left: -5px; border: 4.5px solid transparent; border-top: 6px solid var(--line); border-bottom: 0; }
+.fork { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: min(100%, 520px); margin-top: 0; }
+.fork > div { display: grid; justify-items: center; gap: 0; }
+.fork .label { font: 500 0.75rem var(--font-mono); color: var(--muted); padding: 2px 0; }
+.back { font: 500 0.8rem var(--font-mono); color: var(--muted); margin-top: 6px; }
+
+/* table */
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+td code { color: var(--hook); font-weight: 500; }
+tr.used td { background: var(--hook-soft); }
+
+/* steps */
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.step { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.step .n { font: 700 1.4rem/1 var(--font-body); color: var(--hook); }
+.step p { font-size: 0.9rem; color: var(--muted); }
+
+/* run */
+.run td.ok { color: var(--ok); font-weight: 600; }
+.run tr.stop td { background: var(--stop-soft); }
+.run td.stopc { color: var(--stop); font-weight: 600; }
+
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--line); overflow-x: auto; font: 0.82rem/1.55 var(--font-mono); }
+.note { color: var(--muted); font-size: 0.9rem; }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .steps { grid-template-columns: 1fr; }
+  .short li { grid-template-columns: 1fr; gap: 4px; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">Retail data agent · LangChain</div>
+    <h1>How middleware works</h1>
+    <p style="color:var(--muted); font-size:1.05rem">Middleware is our own code that LangChain runs at fixed points inside the agent loop. Think of it as hooks you plug into the loop without rewriting it.</p>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span class="k">method name</span><span>decides <b>when</b> it runs: <code>before_model</code> runs before every LLM call, <code>after_model</code> after it.</span></li>
+      <li><span class="k">create_agent</span><span>does the <b>wiring</b>: it sees which hook methods a middleware overrides and plugs each one into the loop.</span></li>
+      <li><span class="k">@hook_config</span><span>decides <b>what it may do</b>, such as ending the loop early with <code>can_jump_to=["end"]</code>.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The agent loop, with the hooks</h2>
+    <div class="loop" aria-label="Agent loop">
+      <div class="box"><b>question</b></div>
+      <div class="down"></div>
+      <div class="box hook"><b>before_model</b><small>CallBudget checks: is this call over the limit?</small></div>
+      <div class="down"></div>
+      <div class="box llm"><b>LLM call</b><small>writes SQL, or the answer</small></div>
+      <div class="down"></div>
+      <div class="box hook"><b>after_model</b><small>CallBudget counts: +1</small></div>
+      <div class="down"></div>
+      <div class="fork">
+        <div><span class="label">tool calls</span><div class="box tool"><b>run_sql</b><small>then back to before_model ↻</small></div></div>
+        <div><span class="label">no tool calls</span><div class="box"><b>answer, done</b></div></div>
+      </div>
+    </div>
+    <p class="note">The dashed boxes are the hooks. Everything else is the normal loop that <code>create_agent</code> builds.</p>
+  </section>
+
+  <section>
+    <h2>The hooks a middleware can use</h2>
+    <p>LangChain's base class, <code>AgentMiddleware</code>, has a fixed set of hook methods. A middleware picks where it runs simply by overriding them.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>When it runs</th></tr></thead>
+        <tbody>
+          <tr><td><code>before_agent</code></td><td>Once, when a question starts</td></tr>
+          <tr class="used"><td><code>before_model</code></td><td>Before every LLM call · <b>CallBudget checks the limit here</b></td></tr>
+          <tr><td><code>wrap_model_call</code></td><td>Around every LLM call (can change the request or the response)</td></tr>
+          <tr class="used"><td><code>after_model</code></td><td>After every LLM call · <b>CallBudget counts here</b></td></tr>
+          <tr><td><code>wrap_tool_call</code></td><td>Around every tool call, such as <code>run_sql</code></td></tr>
+          <tr><td><code>after_agent</code></td><td>Once, when the question ends</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What <code>create_agent</code> does with it</h2>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Looks</h3><p>Checks which hook methods each middleware overrides.</p></div>
+      <div class="step"><div class="n">2</div><h3>Wires</h3><p>Plugs each overridden method into the loop at its fixed point, as a step in the LangGraph graph.</p></div>
+      <div class="step"><div class="n">3</div><h3>Skips</h3><p>Leaves out the hooks it didn't override, so they cost nothing.</p></div>
+    </div>
+    <p class="note">Nobody configures the position anywhere. <code>ModelCallLimitMiddleware</code> overrides <code>before_model</code> and <code>after_model</code>, and that alone puts it in the right place.</p>
+  </section>
+
+  <section>
+    <h2>Example: how CallBudget stops a runaway question</h2>
+    <p>It keeps a counter in the agent's state, reset for each new question. It never cuts a call off halfway; it just refuses to start the 6th.</p>
+    <div class="table-wrap">
+      <table class="run">
+        <thead><tr><th>LLM call</th><th>before_model check</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="ok">count 0 &lt; 5 ✓</td><td>writes SQL, runs it</td></tr>
+          <tr><td>2</td><td class="ok">count 1 &lt; 5 ✓</td><td>SQL failed, fixes it, runs it</td></tr>
+          <tr><td>3</td><td class="ok">count 2 &lt; 5 ✓</td><td>another query</td></tr>
+          <tr><td>4</td><td class="ok">count 3 &lt; 5 ✓</td><td>another query</td></tr>
+          <tr><td>5</td><td class="ok">count 4 &lt; 5 ✓</td><td>another query</td></tr>
+          <tr class="stop"><td>6th attempt</td><td class="stopc">count 5 → stop</td><td>jumps to the end with "I couldn't finish this question within 5 model calls…"</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">If the model answers within 5 calls, the check never fires and the user gets a normal answer. Every SQL retry needs an LLM call, so capping LLM calls caps retries too.</p>
+  </section>
+
+  <section>
+    <h2>Ours vs LangChain's</h2>
+    <p><b>LangChain's <code>ModelCallLimitMiddleware</code></b> has the counter and the stop logic. <b>Our <code>CallBudget</code></b> is a few lines on top: it swaps LangChain's terse "Model call limits exceeded: run limit (5/5)" for a clear message, and tags it so <code>app.py</code> can log the stop. Because it overrides <code>before_model</code>, it repeats the permission to end the loop; without the decorator the jump wouldn't be allowed.</p>
+<pre>class CallBudget(ModelCallLimitMiddleware):
+    @hook_config(can_jump_to=["end"])          # may end the loop early
+    def before_model(self, state, runtime):    # name = runs before every LLM call
+        update = super().before_model(state, runtime)
+        if update is not None:                 # over the limit
+            update["messages"] = [AIMessage("I couldn't finish ...", name=BUDGET_REACHED)]
+        return update</pre>
+  </section>
+
+  <footer>Code: <code>CallBudget</code> in <code>src/retail_agent/agent.py</code>, limit set by <code>MAX_LLM_CALLS</code> (default 5). Tests: <code>tests/test_turn.py</code>. See also <code>docs/sql-errors.html</code> for which errors reach the model.</footer>
+
+</main>
+</body>
+</html>
