@@ -44,6 +44,26 @@ def test_an_empty_result_tells_the_model_there_were_no_rows():
     assert tool_output_seen_by_model(model) == "The query returned no rows. Columns: brand, revenue"
 
 
+def test_an_empty_result_can_be_corrected_with_another_query():
+    wrong = f"SELECT COUNT(*) AS n FROM {PRODUCTS} WHERE brand = 'calvin klein'"
+    fixed = f"SELECT COUNT(*) AS n FROM {PRODUCTS} WHERE LOWER(brand) = 'calvin klein'"
+    model = ScriptedChatModel(script=[run_sql_call(wrong), run_sql_call(fixed), AIMessage("Calvin Klein has 12 products.")])
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[]), QueryResult(columns=["n"], rows=[(12,)])])
+
+    result = assemble_app(model, database).ask("How many Calvin Klein products are there?")
+
+    assert result.sql == [wrong, fixed]
+    assert result.answer == "Calvin Klein has 12 products."
+
+
+def test_a_question_about_the_data_itself_is_answered_without_sql():
+    model = ScriptedChatModel(script=[AIMessage("There are orders, order items, products and users.")])
+    database = FakeDatabase([])
+
+    result = assemble_app(model, database).ask("What data do you have?")
+
+    assert result.sql == []
+    assert database.executed == []
 
 
 def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
