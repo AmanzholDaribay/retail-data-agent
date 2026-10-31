@@ -85,12 +85,16 @@ def make_run_sql(gateway: QueryGateway) -> BaseTool:   <span class="c"># the fac
     @tool
     def run_sql(sql: str) -> str:                      <span class="c"># the tool: the LLM only fills in "sql"</span>
         """Run one SELECT statement against the retail database and return the rows as a table."""
-        return format_table(gateway.run(sql))          <span class="c"># gateway is remembered from the outer function</span>
+        try:
+            result = gateway.run(sql)                  <span class="c"># gateway is remembered from the outer function</span>
+        except QueryError as error:
+            return f"Error: {error}"                   <span class="c"># rejected SQL goes back to the LLM to fix</span>
+        return format_result(result)                   <span class="c"># table + "cut off" / "no rows" notes</span>
 
     return run_sql                                     <span class="c"># hands back the finished tool</span>
 
 <span class="c"># app.py, assemble()</span>
-agent = build_agent(model, [make_run_sql(gateway)], system_prompt)
+agent = build_agent(model, [make_run_sql(gateway)], system_prompt, settings.max_llm_calls, checkpointer=InMemorySaver())
 <span class="c">#                          └── called here: the list holds the tool, not the factory</span></pre>
     <p><code>@tool</code> turns a function's parameters into what the LLM must fill in. That's why it decorates the inner <code>run_sql(sql)</code>. On <code>make_run_sql(gateway)</code> it would ask the LLM for a gateway, which it can't give. The inner function remembering <code>gateway</code> from the outer one is a <strong>closure</strong>.</p>
   </section>
@@ -100,11 +104,11 @@ agent = build_agent(model, [make_run_sql(gateway)], system_prompt)
     <div class="pair">
       <div class="panel bad">
         <h3>Gateway built at import</h3>
-<pre>gateway = QueryGateway(BigQueryDatabase(...), 50)
+<pre>gateway = QueryGateway(BigQueryDatabase(...), QueryGuard(...), 50, 10**9)
 
 @tool
 def run_sql(sql: str) -> str:
-    return format_table(gateway.run(sql))</pre>
+    return format_result(gateway.run(sql))</pre>
         <ul>
           <li>Runs when Python imports <code>tools.py</code>, before <code>.env</code> is loaded</li>
           <li>Importing it connects to real BigQuery, so tests need keys and network</li>
@@ -117,7 +121,7 @@ def run_sql(sql: str) -> str:
 
 @tool
 def run_sql(sql: str) -> str:
-    return format_table(gateway.run(sql))
+    return format_result(gateway.run(sql))
 
 <span class="c"># somewhere else, before first use:</span>
 tools.gateway = QueryGateway(...)</pre>
@@ -138,17 +142,18 @@ tools.gateway = QueryGateway(...)</pre>
       <ol class="order">
         <li>Read <code>.env</code> into <code>Settings</code></li>
         <li>Connect to BigQuery: <code>BigQueryDatabase(...)</code></li>
-        <li>Wrap it with the rules: <code>QueryGateway(database, max_rows)</code></li>
+        <li>Build the guard from the schema's tables: <code>QueryGuard(dialect, allowed_tables)</code></li>
+        <li>Wrap the database with the rules: <code>QueryGateway(database, guard, max_rows, max_bytes)</code></li>
         <li>Give the tool its gateway: <code>make_run_sql(gateway)</code></li>
-        <li>Give the agent its tool: <code>build_agent(model, [run_sql], prompt)</code></li>
+        <li>Give the agent its tool: <code>build_agent(model, [run_sql], prompt, max_llm_calls, checkpointer)</code></li>
       </ol>
     </div>
     <div class="panel good">
       <h3>2. The caller chooses what the tool is connected to</h3>
 <pre><span class="c"># real run</span>
-run_sql = make_run_sql(QueryGateway(BigQueryDatabase(project, max_bytes), max_rows=50))
+run_sql = make_run_sql(QueryGateway(BigQueryDatabase(project, max_bytes), guard, max_rows=50, max_bytes=max_bytes))
 
-<span class="c"># later steps: a stricter gateway (SELECT-only, brand scope, PII rules), same tool code</span>
+<span class="c"># later steps: a stricter gateway (brand scope, PII rules), same tool code</span>
 run_sql = make_run_sql(stricter_gateway)</pre>
     </div>
     <div class="panel good">

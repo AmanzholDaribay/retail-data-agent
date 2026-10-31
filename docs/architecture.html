@@ -135,7 +135,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
 
 <main>
   <header style="display:grid;gap:12px">
-    <div class="eyebrow">retail-data-agent · step 1 · as of 2026-10-30</div>
+    <div class="eyebrow">retail-data-agent · steps 1–2 · as of 2026-10-31</div>
     <h1>Retail Data Agent Map</h1>
     <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>.</p>
     <div class="legend" aria-label="Color legend">
@@ -157,21 +157,21 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>app.ask(question)</span></div>
       <div class="spacer"></div>
 
-      <div class="station llm col-main"><span class="file">app.py → App.ask</span><p>Sends the question to the agent and collects the answer plus every SQL statement run during the turn.</p></div>
+      <div class="station llm col-main"><span class="file">app.py → App.ask</span><p>Sends the question to the agent and collects the answer plus every SQL statement run during the turn. Keeps the conversation under one thread id, so follow-up questions see the earlier turns.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>invoke</span></div>
       <div class="loop" aria-label="Agent loop">
         <h3>The agent loop</h3>
         <ol class="steps">
-          <li>LLM reads the question, the schema and the rules, then writes SQL.</li>
+          <li>LLM reads the question, the earlier turns, the schema and the rules, then writes SQL.</li>
           <li><code>run_sql</code> runs it and returns rows as a table.</li>
           <li>LLM reads the rows and writes the answer.</li>
         </ol>
-        <p class="note">If the SQL fails, the error goes back to the LLM so it can fix it. Ticket 03 caps a question at 5 LLM calls.</p>
+        <p class="note">If the SQL fails or the guard rejects it, the error goes back to the LLM so it can fix it. A question gets at most 5 LLM calls; the 5th has no tools, so it answers from the results it already has.</p>
       </div>
 
-      <div class="station llm col-main"><span class="file">agent.py</span><p>LangChain <code>create_agent</code>: the loop between the model and the tool.</p></div>
+      <div class="station llm col-main"><span class="file">agent.py</span><p>LangChain <code>create_agent</code>: the loop between the model and the tool, with <code>CallBudget</code> middleware for the 5-call limit and a checkpointer that saves the conversation.</p></div>
 
       <div class="arrow both col-main"><span>model ⇄ tool</span></div>
 
@@ -181,13 +181,13 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>tool call: run_sql(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">tools.py → run_sql</span><p>The only tool. Hands the SQL to the gateway and turns the result into a compact text table for the LLM.</p></div>
+      <div class="station data col-main"><span class="file">tools.py → run_sql</span><p>The only tool. Hands the SQL to the gateway and turns the result into a compact text table for the LLM (<code>result_format.py</code>), with a note when rows were cut off or none matched. A rejected query comes back as <code>Error: …</code>.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>gateway.run(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, caps rows. Later: blocks non-SELECTs, scopes brands, masks PII.</p></div>
+      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, runs the guard (<code>guard.py</code>: one SELECT, only the 4 tables), rejects a query whose dry-run estimate is over the byte limit, caps rows. Later: scopes brands, masks PII.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>database.execute(sql, max_rows)</span></div>
@@ -243,13 +243,15 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
         <tbody>
           <tr class="group"><td colspan="3">Application code · src/retail_agent/</td></tr>
           <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL and ANSWER blocks, turns failures into plain messages.</td><td class="grows">step 3 (<code>--user</code>)</td></tr>
-          <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL.</td><td class="grows">each step</td></tr>
-          <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Kept separate so loop rules attach here as middleware.</td><td class="grows">tickets 03, 04; steps 4, 5</td></tr>
-          <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">step 4 (Gemini fallback)</td></tr>
-          <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls, and how results are shown to it.</td><td class="grows">tickets 02, 03; step 5</td></tr>
-          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it.</td><td class="grows">steps 2, 3</td></tr>
-          <tr class="data"><td class="path">db/base.py</td><td>The <code>Database</code> protocol and <code>QueryResult</code>. What any database must offer to plug in.</td><td class="grows">tickets 03, 05</td></tr>
-          <tr class="data"><td class="path">db/bigquery.py</td><td>The BigQuery implementation: billing project, byte cap, rows and bytes processed.</td><td class="grows">tickets 02, 05; step 2</td></tr>
+          <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
+          <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Loop rules attach here as middleware: <code>CallBudget</code> limits a question to 5 LLM calls and makes the last one answer.</td><td class="grows">step 5</td></tr>
+          <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
+          <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls. Rejected queries come back to the model as <code>Error: …</code>.</td><td class="grows">step 5</td></tr>
+          <tr class="data"><td class="path">result_format.py</td><td>How results are shown to the LLM: a compact table, plain dates and numbers, a note when rows were cut off, and "no rows" said in words.</td><td class="grows">–</td></tr>
+          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the byte limit, the row cap.</td><td class="grows">step 3</td></tr>
+          <tr class="data"><td class="path">guard.py</td><td>Parses each query with sqlglot before it runs: exactly one SELECT, reading only the allowed tables, no table functions. Fails closed if it can't parse.</td><td class="grows">step 3</td></tr>
+          <tr class="data"><td class="path">db/base.py</td><td>The <code>Database</code> protocol (<code>execute</code>, <code>estimate_bytes</code>), <code>QueryResult</code> and <code>QueryError</code>. What any database must offer to plug in.</td><td class="grows">ticket 05</td></tr>
+          <tr class="data"><td class="path">db/bigquery.py</td><td>The BigQuery implementation: billing project, byte cap, dry-run byte estimate, rows and bytes processed. Sorts errors into query problems (back to the model) and infrastructure ones.</td><td class="grows">ticket 05</td></tr>
           <tr class="cfg"><td class="path">config.py</td><td>Typed settings read from the environment, with defaults.</td><td class="grows">as settings are added</td></tr>
           <tr class="cfg"><td class="path">schema.py</td><td>Reads <code>schema.yaml</code> and renders it for the prompt.</td><td class="grows">ticket 05; step 3</td></tr>
           <tr class="llm"><td class="path">observability.py</td><td>Logs every LLM call with its duration or error, so a slow or busy model is visible.</td><td class="grows">step 6</td></tr>
@@ -265,13 +267,17 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="cfg"><td class="path">.python-version, .gitignore</td><td>Pins Python 3.12. Keeps <code>.env</code>, <code>logs/</code> and the virtualenv out of git.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Tests · run offline, no keys needed</td></tr>
-          <tr class="ui"><td class="path">tests/fakes.py</td><td>A scripted fake LLM that records what it was sent, and a fake database with canned rows.</td><td class="grows">each step</td></tr>
-          <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives a full question through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/fakes.py</td><td>A scripted fake LLM that records what it was sent, and a fake database with canned rows and byte estimates.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives full questions through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures, call budget, follow-ups.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/harness.py</td><td>Shared helpers: builds an app from the fakes and reads what the model saw from a tool.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/test_query_guard.py</td><td>Each guard rule and the byte limit, through the whole app: rejected queries never reach the database.</td><td class="grows">step 3</td></tr>
+          <tr class="ui"><td class="path">tests/test_bigquery_errors.py</td><td>Which BigQuery errors go back to the model and which stop the question.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Docs and planning</td></tr>
           <tr class="cfg"><td class="path">docs/plan.md</td><td>The brief, client answers, the 7-step plan and every design decision with its rejected alternatives.</td><td class="grows">each step</td></tr>
+          <tr class="cfg"><td class="path">docs/hld.md</td><td>The high-level design: architecture and request-flow diagrams.</td><td class="grows">each step</td></tr>
           <tr class="cfg"><td class="path">docs/specs/step-1-core-loop.md</td><td>Step 1 in detail: user stories, decisions, test cases.</td><td class="grows">–</td></tr>
-          <tr class="cfg"><td class="path">tasks/01–07</td><td>Step 1 split into tickets. 01 is done; 02–04 each depend only on 01; 07 signs off. 05 moved to step 4 (optional) and 06 to step 7.</td><td class="grows">–</td></tr>
+          <tr class="cfg"><td class="path">tasks/01–07</td><td>Step 1 split into tickets. 01–04 and 07 (sign-off) are done. 05 moved to step 4 (optional) and 06 to step 7.</td><td class="grows">–</td></tr>
           <tr class="cfg"><td class="path">README.md</td><td>Stub for now. Ticket 06 turns it into the setup guide.</td><td class="grows">ticket 06</td></tr>
           <tr class="cfg"><td class="path">logs/retail-agent.log</td><td>Created when you run the agent. Not committed.</td><td class="grows">step 6</td></tr>
         </tbody>
@@ -283,8 +289,8 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
     <h2 id="seam-h">Where later steps plug in</h2>
     <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
     <div class="seams">
-      <div class="seam"><h3>Query gateway</h3><ul><li>Step 2: only single SELECTs on the 4 tables; dry-run cost check</li><li>Step 3: brand scoping, PII blocking, groups under 5 hidden</li></ul></div>
-      <div class="seam"><h3>Agent middleware</h3><ul><li>Ticket 03: at most 5 LLM calls per question</li><li>Step 4: fall back between Gemini models</li><li>Step 5: confirm before deleting reports</li></ul></div>
+      <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Step 3: brand scoping, PII blocking, groups under 5 hidden</li></ul></div>
+      <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers</li><li>Step 5: confirm before deleting reports</li></ul></div>
       <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
       <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove no PII reaches the LLM</li></ul></div>
     </div>

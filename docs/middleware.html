@@ -137,6 +137,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid var(--
       <div class="down"></div>
       <div class="box hook"><b>before_model</b><small>CallBudget checks: is this call over the limit?</small></div>
       <div class="down"></div>
+      <div class="box hook"><b>wrap_model_call</b><small>CallBudget, on the last allowed call only: no tools, "answer now"</small></div>
+      <div class="down"></div>
       <div class="box llm"><b>LLM call</b><small>writes SQL, or the answer</small></div>
       <div class="down"></div>
       <div class="box hook"><b>after_model</b><small>CallBudget counts: +1</small></div>
@@ -158,7 +160,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid var(--
         <tbody>
           <tr><td><code>before_agent</code></td><td>Once, when a question starts</td></tr>
           <tr class="used"><td><code>before_model</code></td><td>Before every LLM call · <b>CallBudget checks the limit here</b></td></tr>
-          <tr><td><code>wrap_model_call</code></td><td>Around every LLM call (can change the request or the response)</td></tr>
+          <tr class="used"><td><code>wrap_model_call</code></td><td>Around every LLM call (can change the request or the response) · <b>CallBudget takes the tools away on the last call here</b></td></tr>
           <tr class="used"><td><code>after_model</code></td><td>After every LLM call · <b>CallBudget counts here</b></td></tr>
           <tr><td><code>wrap_tool_call</code></td><td>Around every tool call, such as <code>run_sql</code></td></tr>
           <tr><td><code>after_agent</code></td><td>Once, when the question ends</td></tr>
@@ -178,8 +180,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid var(--
   </section>
 
   <section>
-    <h2>Example: how CallBudget stops a runaway question</h2>
-    <p>It keeps a counter in the agent's state, reset for each new question. It never cuts a call off halfway; it just refuses to start the 6th.</p>
+    <h2>Example: how CallBudget ends a long question</h2>
+    <p>It keeps a counter in the agent's state, reset for each new question. It never cuts a call off halfway. The 5th call gets no tools, so the model has to answer from the results it already fetched; a 6th call is never started.</p>
     <div class="table-wrap">
       <table class="run">
         <thead><tr><th>LLM call</th><th>before_model check</th><th>Result</th></tr></thead>
@@ -188,18 +190,27 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid var(--
           <tr><td>2</td><td class="ok">count 1 &lt; 5 ✓</td><td>SQL failed, fixes it, runs it</td></tr>
           <tr><td>3</td><td class="ok">count 2 &lt; 5 ✓</td><td>another query</td></tr>
           <tr><td>4</td><td class="ok">count 3 &lt; 5 ✓</td><td>another query</td></tr>
-          <tr><td>5</td><td class="ok">count 4 &lt; 5 ✓</td><td>another query</td></tr>
-          <tr class="stop"><td>6th attempt</td><td class="stopc">count 5 → stop</td><td>jumps to the end with "I couldn't finish this question within 5 model calls…"</td></tr>
+          <tr><td>5 (last)</td><td class="ok">count 4 &lt; 5 ✓</td><td><code>wrap_model_call</code> removes the tools and adds "answer now from the results you have, and say what is missing". The model answers.</td></tr>
+          <tr class="stop"><td>6th attempt</td><td class="stopc">count 5 → stop</td><td>Only if the 5th call asked for SQL anyway: jumps to the end with "I couldn't finish this question within 5 model calls…"</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">If the model answers within 5 calls, the check never fires and the user gets a normal answer. Every SQL retry needs an LLM call, so capping LLM calls caps retries too.</p>
+    <p class="note">If the model answers before the 5th call, nothing changes and the user gets a normal answer. Every SQL retry needs an LLM call, so capping LLM calls caps retries too.</p>
   </section>
 
   <section>
     <h2>Ours vs LangChain's</h2>
-    <p><b>LangChain's <code>ModelCallLimitMiddleware</code></b> has the counter and the stop logic. <b>Our <code>CallBudget</code></b> is a few lines on top: it swaps LangChain's terse "Model call limits exceeded: run limit (5/5)" for a clear message, and tags it so <code>app.py</code> can log the stop. Because it overrides <code>before_model</code>, it repeats the permission to end the loop; without the decorator the jump wouldn't be allowed.</p>
+    <p><b>LangChain's <code>ModelCallLimitMiddleware</code></b> has the counter and the stop logic. <b>Our <code>CallBudget</code></b> adds two things on top. <code>wrap_model_call</code> turns the last allowed call into an answer: no tools, the earlier tool calls and results rewritten as plain text (Gemini was seen calling <code>run_sql</code> anyway when it could see them), and a note to answer now. <code>before_model</code> swaps LangChain's terse "Model call limits exceeded: run limit (5/5)" for a clear message, and tags it so <code>app.py</code> can log the stop. Because it overrides <code>before_model</code>, it repeats the permission to end the loop; without the decorator the jump wouldn't be allowed.</p>
 <pre>class CallBudget(ModelCallLimitMiddleware):
+    def wrap_model_call(self, request, handler):  # name = runs around every LLM call
+        if request.state.get("run_model_call_count", 0) == self.run_limit - 1:   # the last allowed call
+            request = request.override(
+                tools=[], tool_choice=None,
+                messages=_tool_exchanges_as_text(request.messages),
+                system_message=SystemMessage(f"{system_text}\n\n{LAST_CALL_NOTE}"),
+            )
+        return handler(request)
+
     @hook_config(can_jump_to=["end"])          # may end the loop early
     def before_model(self, state, runtime):    # name = runs before every LLM call
         update = super().before_model(state, runtime)

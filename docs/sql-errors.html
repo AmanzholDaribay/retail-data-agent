@@ -135,7 +135,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
   <header style="display:grid; gap:10px">
     <div class="eyebrow">Retail data agent · Resilience</div>
     <h1>When a query fails, who fixes it?</h1>
-    <p class="lede">The AI writes SQL, and BigQuery sometimes rejects it. If the problem is in the query, the AI gets the error and tries again. If the problem is BigQuery itself or our setup, retrying can't help, so the agent stops and tells the user.</p>
+    <p class="lede">The AI writes SQL, and our gateway or BigQuery sometimes rejects it. If the problem is in the query, the AI gets the error and tries again. If the problem is BigQuery itself or our setup, retrying can't help, so the agent stops and tells the user.</p>
   </header>
 
   <section aria-label="Decision">
@@ -150,7 +150,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
           <li><b>A typo in a column name</b><span>"Unrecognized name: revenue"</span></li>
           <li><b>A SQL syntax mistake</b><span>a missing comma, a wrong function</span></li>
           <li><b>A table that doesn't exist</b><span>a misspelled table name</span></li>
-          <li><b>The query would cost too much</b><span>it would scan more than our 1 GB cap, so the AI adds filters</span></li>
+          <li><b>The query would cost too much</b><span>it would scan more than our 1 GB cap, so the AI adds filters (normally caught by the gateway first, see below)</span></li>
           <li><b>The query is too heavy, or the result too big</b><span>the AI aggregates or adds a LIMIT</span></li>
           <li class="new"><b>Any error we haven't seen before</b><span>by default, the AI gets a chance</span></li>
         </ul>
@@ -173,6 +173,22 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
   </section>
 
   <section>
+    <h2>Before BigQuery: the gateway's own checks</h2>
+    <p>Every query passes our gateway first. If it breaks a rule, it never reaches BigQuery, costs nothing, and the reason goes to the AI like any query mistake.</p>
+    <div class="card retry">
+      <div class="tag">Rejected by the gateway → send it to the AI</div>
+      <ul>
+        <li><b>Not a SELECT</b><span>INSERT, DELETE, CREATE and scripts are refused: "Only SELECT queries are allowed."</span></li>
+        <li><b>More than one statement</b><span>"Send one statement per query."</span></li>
+        <li><b>A table outside the 4 allowed ones</b><span>the error lists the tables it may use</span></li>
+        <li><b>A table function</b><span>such as ML.PREDICT, which reads data in other ways</span></li>
+        <li><b>SQL we can't parse</b><span>refused rather than run unchecked, so the AI simplifies it</span></li>
+        <li><b>Over the 1 GB limit</b><span>a free dry-run estimates the scan first: "This query would scan 2.1 GB, over the 1.0 GB limit per query…"</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
     <h2>Example: a typo, fixed in one retry</h2>
     <div class="steps">
       <div class="step ai"><div><p><b>Manager asks:</b> "What is our revenue?" The AI writes SQL with a column that doesn't exist.</p><pre>SELECT revenue FROM order_items</pre></div></div>
@@ -186,8 +202,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
   <section>
     <h2>Why retries can't run up the bill</h2>
     <div class="rails">
-      <div class="rail"><div class="big">5</div><h3>AI calls per question, at most</h3><p>A normal question uses 2. After 5, the agent stops with "I couldn't finish this question…" and the chat continues.</p></div>
-      <div class="rail"><div class="big">1 GB</div><h3>scanned per query, at most</h3><p>BigQuery refuses anything bigger, and that refusal goes to the AI so it can narrow the query.</p></div>
+      <div class="rail"><div class="big">5</div><h3>AI calls per question, at most</h3><p>A normal question uses 2. The 5th call can't run queries, so the AI answers from what it already has and says what is missing. The chat continues.</p></div>
+      <div class="rail"><div class="big">1 GB</div><h3>scanned per query, at most</h3><p>The gateway checks the estimate before running, and BigQuery enforces the same cap as a backstop. Either refusal goes to the AI so it can narrow the query.</p></div>
       <div class="rail"><div class="big">0</div><h3>retries on infrastructure errors</h3><p>The AI never retries a problem it can't fix, such as an outage or a missing permission.</p></div>
     </div>
   </section>
@@ -200,8 +216,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
   </section>
 
   <footer>
-    <div>For engineers: the list is <code>_INFRASTRUCTURE_REASONS</code> in <code>src/retail_agent/db/bigquery.py</code>; errors without a reason code are decided by HTTP status (5xx, 401, 403 and 429 stop; others go to the AI). The 5-call cap is <code>CallBudget</code> in <code>src/retail_agent/agent.py</code>, set by <code>MAX_LLM_CALLS</code>.</div>
-    <div>Tests: <code>tests/test_bigquery_errors.py</code> and <code>tests/test_turn.py</code>. Ticket: <code>tasks/03-recover-from-bad-sql.md</code>.</div>
+    <div>For engineers: the list is <code>_INFRASTRUCTURE_REASONS</code> in <code>src/retail_agent/db/bigquery.py</code>; errors without a reason code are decided by HTTP status (5xx, 401, 403 and 429 stop; others go to the AI). Gateway rejections are <code>QueryRejected</code> (a <code>QueryError</code>) from <code>guard.py</code> and <code>gateway.py</code>. The 5-call cap is <code>CallBudget</code> in <code>src/retail_agent/agent.py</code>, set by <code>MAX_LLM_CALLS</code>.</div>
+    <div>Tests: <code>tests/test_bigquery_errors.py</code>, <code>tests/test_query_guard.py</code> and <code>tests/test_turn.py</code>. Ticket: <code>tasks/03-recover-from-bad-sql.md</code>.</div>
   </footer>
 
 </main>

@@ -121,6 +121,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
       <!-- entry -->
       <rect x="390" y="10" width="120" height="34" rx="17" style="fill:var(--surface); stroke:var(--line); stroke-width:1.5"/>
       <text x="450" y="32" text-anchor="middle" style="font-size:14px; font-weight:600">question</text>
+      <text x="520" y="32" class="sub">+ earlier turns, from the checkpointer</text>
       <line x1="450" y1="44" x2="450" y2="84" style="stroke:var(--line); stroke-width:2" marker-end="url(#ar)"/>
 
       <!-- 1 before_model (top) -->
@@ -132,6 +133,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
       <rect x="561" y="218" width="140" height="46" rx="8" style="fill:var(--llm-soft); stroke:var(--llm); stroke-width:1.5"/>
       <text x="631" y="238" text-anchor="middle" class="mono" style="fill:var(--llm)">LLM call</text>
       <text x="631" y="255" text-anchor="middle" class="sub">writes SQL or answer</text>
+      <text x="631" y="282" text-anchor="middle" class="sub" style="fill:var(--hook)">5th call: no tools, must answer</text>
 
       <!-- 3 after_model (lower right) -->
       <rect x="492" y="431" width="140" height="46" rx="8" style="fill:var(--hook-soft); stroke:var(--hook); stroke-width:1.5; stroke-dasharray:5 3"/>
@@ -151,7 +153,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
       <!-- outside the circle: gateway and BigQuery -->
       <rect x="20" y="431" width="140" height="46" rx="8" style="fill:var(--data-soft); stroke:var(--data); stroke-width:1.5"/>
       <text x="90" y="451" text-anchor="middle" class="mono" style="fill:var(--data)">QueryGateway</text>
-      <text x="90" y="468" text-anchor="middle" class="sub">policy, row cap, logs</text>
+      <text x="90" y="468" text-anchor="middle" class="sub">guard, byte limit, row cap</text>
 
       <rect x="20" y="318" width="140" height="46" rx="8" style="fill:var(--data-soft); stroke:var(--data); stroke-width:1.5"/>
       <text x="90" y="338" text-anchor="middle" class="mono" style="fill:var(--data)">BigQuery</text>
@@ -174,19 +176,19 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
       <text x="700" y="490" class="lab" style="fill:var(--end)">no tool calls → answer</text>
 
       <path d="M520,98 C690,98 800,170 800,274" style="fill:none; stroke:var(--stop); stroke-width:2; stroke-dasharray:6 4" marker-end="url(#ar-stop)"/>
-      <text x="640" y="84" class="lab" style="fill:var(--stop)">limit reached → jump to end</text>
+      <text x="580" y="84" class="lab" style="fill:var(--stop)">5th call asked for SQL → end</text>
     </svg>
   </figure>
 
   <ol class="steps">
-    <li><b>before_model</b>: CallBudget checks the count. Under 5, the loop goes on. At 5, it <b>jumps to END</b> with "I couldn't finish this question…".</li>
-    <li><b>LLM call</b>: the model either writes SQL (a tool call) or gives the final answer.</li>
+    <li><b>before_model</b>: CallBudget checks the count. Under 5, the loop goes on. If the 5th call still asked for SQL, it <b>jumps to END</b> with "I couldn't finish this question…". That is only a fallback: normally the 5th call answers.</li>
+    <li><b>LLM call</b>: the model either writes SQL (a tool call) or gives the final answer. It sees the earlier turns of the conversation too, so follow-up questions work. On the <b>5th call</b> CallBudget removes the tools and adds a note: answer now from the results you have, and say what is missing.</li>
     <li><b>after_model</b>: CallBudget adds 1 to the count. With no tool calls, the answer goes to <b>END</b>. With tool calls, the loop goes on.</li>
-    <li><b>run_sql tool</b>: hands the SQL out of the circle to the <b>QueryGateway</b>, which passes it to <b>BigQuery</b>.</li>
-    <li><b>tool result</b>: the rows come back into the circle, or <code>Error: …</code> if BigQuery rejected the query, and the loop returns to <b>before_model</b>.</li>
+    <li><b>run_sql tool</b>: hands the SQL out of the circle to the <b>QueryGateway</b>. The guard checks it is one SELECT over the 4 tables, a dry-run checks it stays under the byte limit, and only then does it run in <b>BigQuery</b>.</li>
+    <li><b>tool result</b>: the rows come back into the circle as a table (with a note if rows were cut off or none matched), or <code>Error: …</code> if the gateway or BigQuery rejected the query, and the loop returns to <b>before_model</b>.</li>
   </ol>
 
-  <footer>Code: <code>agent.py</code> (CallBudget, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>gateway.py</code>, <code>db/bigquery.py</code>. See also <code>docs/middleware.html</code> and <code>docs/sql-errors.html</code>.</footer>
+  <footer>Code: <code>agent.py</code> (CallBudget, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>gateway.py</code>, <code>guard.py</code>, <code>db/bigquery.py</code>; the conversation is kept in <code>app.py</code>. See also <code>docs/middleware.html</code> and <code>docs/sql-errors.html</code>.</footer>
 </main>
 </body>
 </html>
