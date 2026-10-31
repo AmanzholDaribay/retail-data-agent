@@ -135,9 +135,9 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
 
 <main>
   <header style="display:grid;gap:12px">
-    <div class="eyebrow">retail-data-agent · steps 1–2 · as of 2026-10-31</div>
+    <div class="eyebrow">retail-data-agent · steps 1–2, step 3 in progress · as of 2026-10-31</div>
     <h1>Retail Data Agent Map</h1>
-    <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>.</p>
+    <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a> and <a href="brand-scoping.html">how each user sees only their brands</a>.</p>
     <div class="legend" aria-label="Color legend">
       <span><i class="swatch" style="border-color:var(--ui);background:var(--ui-soft)"></i>What you see</span>
       <span><i class="swatch" style="border-color:var(--llm);background:var(--llm-soft)"></i>Agent and LLM</span>
@@ -151,7 +151,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
     <p>Each box is a file. The agent and the LLM go back and forth until the model has enough data to answer. A normal question takes 2 LLM calls.</p>
 
     <div class="flow">
-      <div class="station ui col-main"><span class="file">cli.py</span><p>You type <em>"Top 5 brands by revenue last month?"</em>. Prints the SQL and ANSWER blocks, or a clear message if the model is busy.</p></div>
+      <div class="station ui col-main"><span class="file">cli.py</span><p>Started as <code>retail-agent --user levis_manager</code>; the user and their brands come from <code>users.yaml</code> (<code>users.py</code>). You type <em>"Top 5 brands by revenue last month?"</em>. Prints the SQL and ANSWER blocks, or a clear message if the model is busy.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>app.ask(question)</span></div>
@@ -187,7 +187,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>gateway.run(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, runs the guard (<code>guard.py</code>: one SELECT, only the 4 tables), rejects a query whose dry-run estimate is over the byte limit, caps rows. Later: scopes brands, masks PII.</p></div>
+      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, runs the guard (<code>guard.py</code>: one SELECT, only the 4 tables), limits the query to the user's brands (<code>brand_scope.py</code>), rejects a query whose dry-run estimate is over the byte limit, caps rows. Later in step 3: masks PII. See <a href="brand-scoping.html">brand scoping</a>.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>database.execute(sql, max_rows)</span></div>
@@ -242,23 +242,26 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
         <thead><tr><th>File</th><th>Why it exists</th><th>Grows in</th></tr></thead>
         <tbody>
           <tr class="group"><td colspan="3">Application code · src/retail_agent/</td></tr>
-          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL and ANSWER blocks, turns failures into plain messages.</td><td class="grows">step 3 (<code>--user</code>)</td></tr>
+          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL and ANSWER blocks, turns failures into plain messages. <code>--user</code> picks who is asking.</td><td class="grows">–</td></tr>
           <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
           <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Loop rules attach here as middleware: <code>CallBudget</code> limits a question to 5 LLM calls and makes the last one answer.</td><td class="grows">step 5</td></tr>
           <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
           <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls. Rejected queries come back to the model as <code>Error: …</code>.</td><td class="grows">step 5</td></tr>
           <tr class="data"><td class="path">result_format.py</td><td>How results are shown to the LLM: a compact table, plain dates and numbers, a note when rows were cut off, and "no rows" said in words.</td><td class="grows">–</td></tr>
-          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the byte limit, the row cap.</td><td class="grows">step 3</td></tr>
+          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the brand scope, the byte limit, the row cap.</td><td class="grows">step 3 (PII)</td></tr>
+          <tr class="data"><td class="path">brand_scope.py</td><td>Rewrites each query so every table it reads holds only the user's brands. The CEO's queries pass unchanged.</td><td class="grows">step 3 (<code>num_of_item</code> leak)</td></tr>
           <tr class="data"><td class="path">guard.py</td><td>Parses each query with sqlglot before it runs: exactly one SELECT, reading only the allowed tables, no table functions. Fails closed if it can't parse.</td><td class="grows">step 3</td></tr>
           <tr class="data"><td class="path">db/base.py</td><td>The <code>Database</code> protocol (<code>execute</code>, <code>estimate_bytes</code>), <code>QueryResult</code> and <code>QueryError</code>. What any database must offer to plug in.</td><td class="grows">ticket 05</td></tr>
           <tr class="data"><td class="path">db/bigquery.py</td><td>The BigQuery implementation: billing project, byte cap, dry-run byte estimate, rows and bytes processed. Sorts errors into query problems (back to the model) and infrastructure ones.</td><td class="grows">ticket 05</td></tr>
           <tr class="cfg"><td class="path">config.py</td><td>Typed settings read from the environment, with defaults.</td><td class="grows">as settings are added</td></tr>
+          <tr class="cfg"><td class="path">users.py</td><td>Reads <code>users.yaml</code> with pydantic and returns the <code>--user</code> with their brands. A bad file or unknown user stops the CLI at startup.</td><td class="grows">–</td></tr>
           <tr class="cfg"><td class="path">schema.py</td><td>Reads <code>schema.yaml</code> and renders it for the prompt.</td><td class="grows">ticket 05; step 3</td></tr>
           <tr class="llm"><td class="path">observability.py</td><td>Logs every LLM call with its duration or error, so a slow or busy model is visible.</td><td class="grows">step 6</td></tr>
           <tr class="cfg"><td class="path">__init__.py, db/__init__.py</td><td>Mark the folders as Python packages.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Data and prompt · edited without touching code</td></tr>
           <tr class="cfg"><td class="path">schema.yaml</td><td>What the agent knows about the data: tables, columns, types, notes such as the revenue definition.</td><td class="grows">step 3 (PII tags)</td></tr>
+          <tr class="cfg"><td class="path">users.yaml</td><td>Who can use the agent and which brands each one sees; <code>all</code> for the CEO.</td><td class="grows">as users are added</td></tr>
           <tr class="cfg"><td class="path">prompts/system.md</td><td>The agent's instructions, as a template. Persona and tone change here.</td><td class="grows">as needed</td></tr>
 
           <tr class="group"><td colspan="3">Setup</td></tr>
@@ -271,6 +274,8 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives full questions through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures, call budget, follow-ups.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/harness.py</td><td>Shared helpers: builds an app from the fakes and reads what the model saw from a tool.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/test_query_guard.py</td><td>Each guard rule and the byte limit, through the whole app: rejected queries never reach the database.</td><td class="grows">step 3</td></tr>
+          <tr class="ui"><td class="path">tests/test_brand_scope.py</td><td>Tricky queries can't read a table outside the brand filter; the CEO's SQL is unchanged; the gateway runs the scoped SQL.</td><td class="grows">step 3</td></tr>
+          <tr class="ui"><td class="path">tests/test_users.py</td><td>Loading <code>users.yaml</code>: brand lists, <code>all</code>, unknown users and broken entries.</td><td class="grows">–</td></tr>
           <tr class="ui"><td class="path">tests/test_bigquery_errors.py</td><td>Which BigQuery errors go back to the model and which stop the question.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Docs and planning</td></tr>
@@ -289,7 +294,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
     <h2 id="seam-h">Where later steps plug in</h2>
     <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
     <div class="seams">
-      <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Step 3: brand scoping, PII blocking, groups under 5 hidden</li></ul></div>
+      <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Done in step 3: every query limited to the user's brands</li><li>Step 3 next: PII blocking, groups under 5 hidden</li></ul></div>
       <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers</li><li>Step 5: confirm before deleting reports</li></ul></div>
       <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
       <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove no PII reaches the LLM</li></ul></div>

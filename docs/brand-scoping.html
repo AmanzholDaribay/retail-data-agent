@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brand Scoping</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One reading column: the path a query takes, how brands reach each table, a real rewrite, the two options, then the tricky cases. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --ai: #a35a12;          /* what the AI wrote */
+  --ai-soft: #f8ecdf;
+  --scope: #2c6b3f;       /* filtered to the user's brands */
+  --scope-soft: #e4f1e7;
+  --data: #2b5d8a;        /* the real tables in BigQuery */
+  --data-soft: #e2edf6;
+  --fail: #a3352b;        /* stopped, or a leak */
+  --fail-soft: #f8e5e2;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --ai: #e7a464; --ai-soft: #3a2a1a; --scope: #7fcf96; --scope-soft: #1b3324;
+    --data: #82b6e3; --data-soft: #18293a; --fail: #f08a7e; --fail-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --ai: #e7a464; --ai-soft: #3a2a1a; --scope: #7fcf96; --scope-soft: #1b3324;
+  --data: #82b6e3; --data-soft: #18293a; --fail: #f08a7e; --fail-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 900px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--data); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+/* in short */
+.short { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.short li::before { counter-increment: s; content: counter(s); font: 600 0.85rem var(--font-mono); color: var(--scope); }
+
+/* pipeline of stations */
+.pipe { display: grid; justify-items: center; }
+.station {
+  width: 100%; max-width: 560px; border: 1.5px solid var(--c); background: var(--c-soft);
+  border-radius: 10px; padding: 12px 16px; display: grid; gap: 2px;
+}
+.station .tag { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--c); }
+.station p { font-size: 0.9rem; color: var(--muted); }
+.station.ai    { --c: var(--ai);    --c-soft: var(--ai-soft); }
+.station.plain { --c: var(--muted); --c-soft: var(--surface); }
+.station.scope { --c: var(--scope); --c-soft: var(--scope-soft); border-width: 2.5px; }
+.station.data  { --c: var(--data);  --c-soft: var(--data-soft); }
+.arrow { height: 30px; border-left: 1.5px solid var(--line); position: relative; }
+.arrow::after {
+  content: ""; position: absolute; bottom: -1px; left: -5px;
+  border: 4.5px solid transparent; border-top: 6px solid var(--line);
+}
+.side-exit { font: 600 0.78rem/1 var(--font-mono); color: var(--fail); margin-top: 4px; }
+
+/* how each table reaches a brand */
+.chain { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.tbl { background: var(--surface); border: 1.5px solid var(--scope); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.tbl code { font-size: 0.95rem; font-weight: 500; color: var(--scope); }
+.tbl p { font-size: 0.86rem; color: var(--muted); }
+.tbl .via { font: 0.78rem/1.4 var(--font-mono); color: var(--fg); }
+.split { display: grid; gap: 12px; }
+
+/* code */
+pre {
+  margin: 0; padding: 12px 14px; border-radius: 8px; overflow-x: auto;
+  background: var(--surface); border: 1.5px solid var(--line);
+  font: 0.82rem/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word;
+}
+pre.ai { border-color: var(--ai); }
+pre.scope { border-color: var(--scope); }
+pre .c { color: var(--muted); }
+pre .s { color: var(--scope); font-weight: 500; }
+.label { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+.steps { display: grid; gap: 10px; counter-reset: step; }
+.step {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start;
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px 14px;
+}
+.step::before {
+  counter-increment: step; content: counter(step);
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 0.85rem var(--font-mono); background: var(--s, var(--line)); color: var(--bg);
+}
+.step.ai { --s: var(--ai); } .step.scope { --s: var(--scope); } .step.data { --s: var(--data); }
+.step > div { display: grid; gap: 8px; min-width: 0; }
+.step p { font-size: 0.93rem; }
+
+/* the two options */
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.option { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.option.chosen { border-color: var(--scope); border-width: 2.5px; }
+.option .tag { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.option.chosen .tag { color: var(--scope); }
+.option p { font-size: 0.92rem; }
+.option ul { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 6px; font-size: 0.9rem; }
+.option li { display: grid; grid-template-columns: 20px minmax(0, 1fr); }
+.option li.plus::before  { content: "+"; color: var(--scope); font-weight: 700; }
+.option li.minus::before { content: "−"; color: var(--fail); font-weight: 700; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+td.ok { color: var(--scope); font-weight: 600; white-space: nowrap; }
+td.open { color: var(--fail); font-weight: 600; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+
+.rule {
+  border-left: 4px solid var(--scope); background: var(--scope-soft); border-radius: 0 10px 10px 0;
+  padding: 14px 16px; display: grid; gap: 6px;
+}
+footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; border-top: 1.5px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .chain, .compare { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">Retail data agent · Brand scoping · as of 2026-10-31</div>
+    <h1>How does a brand manager see only their own brands?</h1>
+    <p class="lede">The AI writes SQL as if it could see every brand. Before that SQL runs, our code swaps every table in it for a smaller table that holds only the user's brands. The AI can ask for anything, but other brands' rows are simply not there. See also <a href="architecture.html">the architecture</a> and <a href="sql-errors.html">what happens when a query fails</a>.</p>
+    <div class="legend" aria-label="Color legend">
+      <span><i class="swatch" style="border-color:var(--ai);background:var(--ai-soft)"></i>What the AI wrote</span>
+      <span><i class="swatch" style="border-color:var(--scope);background:var(--scope-soft)"></i>Filtered to the user's brands</span>
+      <span><i class="swatch" style="border-color:var(--data);background:var(--data-soft)"></i>BigQuery</span>
+      <span><i class="swatch" style="border-color:var(--fail);background:var(--fail-soft)"></i>Stopped, or still open</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>In short</h2>
+    <ol class="short">
+      <li>The user is picked at startup (<code>--user levis_manager</code>), and <code>users.yaml</code> says which brands they see. The CEO has <code>all</code>.</li>
+      <li>The filter is applied by code to every query, not checked for and not asked of the AI, so no prompt can talk its way around it.</li>
+      <li>Only <code>products</code> has a brand. The other tables are filtered through the IDs that link them to those products.</li>
+    </ol>
+  </section>
+
+  <section aria-label="The path a query takes">
+    <h2>Where the filter sits</h2>
+    <div class="pipe">
+      <div class="station ai"><div class="tag">1 · The AI writes SQL</div><p>Plain SQL over the four real tables. It doesn't need to filter by brand, and no filter it writes can widen what it sees.</p></div>
+      <div class="arrow"></div>
+      <div class="station plain"><div class="tag">2 · Guard</div><p>One SELECT, only the four allowed tables, nothing it can't parse.</p><div class="side-exit">✕ anything else is stopped here</div></div>
+      <div class="arrow"></div>
+      <div class="station scope"><div class="tag">3 · Brand scope (new)</div><p>Swaps each table for its brand-filtered version. The CEO's SQL passes unchanged.</p></div>
+      <div class="arrow"></div>
+      <div class="station plain"><div class="tag">4 · Size check</div><p>A free dry run of the <em>filtered</em> SQL: over 1 GB is stopped.</p></div>
+      <div class="arrow"></div>
+      <div class="station data"><div class="tag">5 · BigQuery runs it</div><p>The rows that come back belong to the user's brands only.</p></div>
+    </div>
+  </section>
+
+  <section aria-label="How each table is filtered">
+    <h2>How each table reaches a brand</h2>
+    <p>Only the product catalog knows brands. Everything else follows the links back to it, the way a receipt leads back to the shop that sold the item.</p>
+    <div class="split">
+      <div class="tbl" style="max-width:560px; justify-self:center; width:100%">
+        <code>products</code>
+        <div class="via">WHERE brand IN ('Levi\'s')</div>
+        <p>Only the user's brands. This is the root of every other filter.</p>
+      </div>
+      <div class="chain">
+        <div class="tbl">
+          <code>order_items</code>
+          <div class="via">product_id IN (those products)</div>
+          <p>Items sold of those products.</p>
+        </div>
+        <div class="tbl">
+          <code>orders</code>
+          <div class="via">order_id IN (those items' orders)</div>
+          <p>Orders with at least one such item.</p>
+        </div>
+        <div class="tbl">
+          <code>users</code>
+          <div class="via">id IN (those items' buyers)</div>
+          <p>Customers who bought at least one.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="A real rewrite">
+    <h2>A real example: <code>levis_manager</code> counts products</h2>
+    <div class="steps">
+      <div class="step ai"><div>
+        <p>The AI writes the obvious query, with no brand filter at all:</p>
+        <pre class="ai">SELECT brand, COUNT(*) AS n
+FROM `bigquery-public-data.thelook_ecommerce.products`
+GROUP BY brand</pre>
+      </div></div>
+      <div class="step scope"><div>
+        <p>The brand scope adds the four filtered tables at the front and points the query at them. The AI's own part is unchanged:</p>
+        <pre class="scope"><span class="s">WITH _brand_scoped_products AS (</span>
+<span class="s">  SELECT * FROM `bigquery-public-data.thelook_ecommerce.products`</span>
+<span class="s">  WHERE brand IN ('Levi\'s')),</span>           <span class="c">-- built by our code, from users.yaml</span>
+<span class="s">  _brand_scoped_order_items AS (…),</span>       <span class="c">-- the other three are always added too;</span>
+<span class="s">  _brand_scoped_orders AS (…),</span>            <span class="c">-- BigQuery skips the ones a query</span>
+<span class="s">  _brand_scoped_users AS (…)</span>              <span class="c">-- doesn't read, at no extra cost</span>
+SELECT brand, COUNT(*) AS n
+FROM <span class="s">_brand_scoped_products AS products</span>  <span class="c">-- old name kept as alias</span>
+GROUP BY brand</pre>
+      </div></div>
+      <div class="step data"><div>
+        <p>BigQuery returns one row: <code>Levi's · 259</code>. For <code>denim_lead</code> (Levi's and Calvin Klein) the same query returns two rows, <code>Calvin Klein · 497</code> and <code>Levi's · 259</code>. That was checked against the live data on 2026-10-31, and it scanned 0.35 MB.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <section aria-label="The two options">
+    <h2>Two ways to do it, and why we rewrite the SQL</h2>
+    <div class="compare">
+      <div class="option chosen">
+        <div class="tag">A · Rewrite the SQL · chosen</div>
+        <p>Our code edits each query before it runs, using the same SQL parser the guard already uses.</p>
+        <ul>
+          <li class="plus">Nothing to set up: works with any reviewer's key and project.</li>
+          <li class="plus">A new user is one line in <code>users.yaml</code>.</li>
+          <li class="plus">Fully tested offline, with tricky queries.</li>
+          <li class="minus">The rule lives in our code, so only queries that go through the gateway are protected.</li>
+        </ul>
+      </div>
+      <div class="option">
+        <div class="tag">B · Scoped views · put aside</div>
+        <p>Pre-filtered views per user, stored in BigQuery. The gateway only points the query at that user's views.</p>
+        <ul>
+          <li class="plus">The filter lives in the database, so other tools get it too.</li>
+          <li class="plus">In production, each login could read only its own views.</li>
+          <li class="minus">Needs datasets and views created in an external service (a GCP project), and kept in step with <code>users.yaml</code>.</li>
+          <li class="minus">Can't be tested without live BigQuery, and the gateway still has to swap table names.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">For a prototype that reviewers run with their own free key, the setup cost of B decides it. B remains the natural production upgrade: the same four filters, moved into views behind per-user access.</p>
+  </section>
+
+  <section aria-label="Tricky cases">
+    <h2>Tricky queries it has to survive</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>The AI writes…</th><th>What happens</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><code>SELECT * FROM products</code>, no filter</td><td>Reads the filtered table, so only the user's brands come back.</td><td class="ok">covered</td></tr>
+          <tr><td><code>WHERE brand = 'Nike'</code> on another brand</td><td>Filters an already-filtered table, so it returns nothing.</td><td class="ok">covered</td></tr>
+          <tr><td>Its own <code>WITH products AS (…)</code></td><td>Its WITH reads our filtered table, because ours come first.</td><td class="ok">covered</td></tr>
+          <tr><td>Subqueries, <code>UNION</code>s, a table used twice</td><td>Every table reference in the parsed query is swapped.</td><td class="ok">covered</td></tr>
+          <tr><td>A WITH named like ours, <code>_brand_scoped_…</code></td><td>BigQuery rejects the duplicate name, so the query fails rather than leaks.</td><td class="ok">fails closed</td></tr>
+          <tr><td>A table with no brand rule</td><td>Stopped: "can't be limited to your brands".</td><td class="ok">fails closed</td></tr>
+          <tr><td><code>orders.num_of_item</code></td><td>Counts every item in an order, other brands' items too, so it leaks a little.</td><td class="open">still open</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>Never ask the AI to respect brands: swap every table it reads for one that already holds only the user's brands, and stop any query where that can't be done.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Code: <code>BrandScope.apply</code> in <code>src/retail_agent/brand_scope.py</code> (the four filters are in <code>_FILTERS</code>), called by <code>QueryGateway.run</code> in <code>src/retail_agent/gateway.py</code> after <code>QueryGuard.check</code> and before the byte check. Built in <code>assemble</code> in <code>src/retail_agent/app.py</code> from <code>schema.dataset</code> and <code>user.brands</code>. The user comes from <code>load_user</code> in <code>src/retail_agent/users.py</code>, reading <code>users.yaml</code> (<code>USERS_PATH</code>). The filtered SQL is logged as <code>Scoped SQL:</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Tests: <code>tests/test_brand_scope.py</code> (the tricky queries above, the CEO, the gateway end to end) and <code>tests/test_users.py</code>.</div>
+    <div>Plan: step 3 in <code>docs/plan.md</code>. See also <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>

@@ -42,22 +42,22 @@ flowchart LR
     app -.-> langsmith["LangSmith traces<br/>off by default"]
 
     classDef planned stroke-dasharray: 5 5
-    class confirm,report_tools,store,access,langsmith planned
+    class confirm,report_tools,store,langsmith planned
 ```
 
-Dashed boxes are planned. The gateway box is built with its guard and row cap; its brand scoping and PII layers are planned.
+Dashed boxes are planned. The gateway box is built with its guard, brand scope and row cap; its PII layer is planned. `user → brands` is `users.yaml`.
 
 ## Components
 
 | Component | Responsibility | Where | Status |
 |---|---|---|---|
-| CLI | Chat loop in the terminal. Prints each answer with the SQL that produced it; a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
+| CLI | Chat loop in the terminal. `--user` picks who is asking, from `users.yaml` (`users.py`). Prints each answer with the SQL that produced it; a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
 | App | One conversation per CLI run. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
 | Agent loop | The model ↔ tools loop, from LangChain `create_agent` (LangGraph underneath). Remembers earlier turns through a checkpointer. | `agent.py` | built |
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |
 | Call budget | Limits a question to `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. The last allowed call gets no tools, so it answers from the results already fetched. | `agent.py` | built |
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
-| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, then a dry run against the byte limit, then the query. | `gateway.py`, `guard.py` | built (guard, byte limit, row cap); scoping and PII planned |
+| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, then the brand scope, then a dry run against the byte limit, then the query. | `gateway.py`, `guard.py`, `brand_scope.py` | built (guard, brand scope, byte limit, row cap); PII planned |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
 | Schema | `schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
 | Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time. | — | planned |
@@ -83,6 +83,7 @@ sequenceDiagram
     A->>T: SQL
     T->>G: run(sql)
     G->>G: guard: one SELECT over the allowed tables
+    G->>G: brand scope: every table filtered to the user's brands
     G->>B: dry run (free)
     B-->>G: bytes it would scan
     G->>B: query, capped by maximum_bytes_billed
@@ -104,6 +105,7 @@ If the guard or the dry run rejects the query, or BigQuery reports an error, the
 | **LangChain `create_agent`** as the agent framework. | Gives the model ↔ tools loop, checkpointing and interrupts. Agent-level concerns (call budget, delete confirmation) attach as middleware. Heavier options (Deep Agents) add tokens and latency for a job of 1–3 tool calls per question. |
 | **Gemini by default, provider set in config.** | The client's reviewers test with a free Gemini AI Studio key. Switching provider is a config change through `init_chat_model`; Anthropic, OpenAI and Azure OpenAI are available as optional extras but switched off. |
 | **All data policy in the query gateway, not in middleware or the prompt.** | One choke point that the model can't talk its way around, and it doesn't depend on the agent framework. Pattern-matching PII middleware was rejected by the client as not robust. |
+| **Brand scoping by rewriting the SQL**, not scoped views in BigQuery. | The gateway swaps every table in the parsed query for a version filtered to the user's brands, so no prompt can widen it. Scoped views would need datasets and views set up in a GCP project and kept in step with `users.yaml`, and can't be tested offline. See [brand-scoping.html](brand-scoping.html). |
 | **Own `Database` protocol and BigQuery adapter**, not SQLAlchemy. | Keeps BigQuery features we rely on: per-job byte caps, dry-run byte estimates and job stats. Another engine means another adapter. |
 | **Schema in `schema.yaml`, prompt in `prompts/system.md`.** | Column notes give the model meaning that raw metadata lacks, with no extra round trip per question. The prompt is a file, so persona and tone change without touching code. |
 | **Compact text tables as tool results.** | Fewer tokens than JSON rows; values formatted plainly, with a footer when a result is cut off or empty. |
@@ -118,7 +120,7 @@ Each layer is enforced in code; the prompt is only the first line.
 | Row cap | At most `MAX_ROWS` rows (default 50) reach the model. | built |
 | Analysis only | The system prompt refuses off-topic requests and attempts to override instructions, reveal the prompt or change data. | built |
 | Query guard | The parsed query must be a single SELECT over the 4 allowed tables; DML, DDL, scripting, other tables and table functions are rejected. A free dry run rejects anything above the byte limit before it costs anything. | built |
-| Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. | planned |
+| Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. Done by rewriting the SQL (`brand_scope.py`). Open: `orders.num_of_item` still counts other brands' items. | built |
 | PII protection | PII columns are tagged in `schema.yaml` and blocked based on the parsed query, not name matching; results are checked again before rows reach the model. Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. | planned |
 | Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. | planned |
 | Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. | planned |

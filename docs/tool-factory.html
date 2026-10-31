@@ -143,7 +143,7 @@ tools.gateway = QueryGateway(...)</pre>
         <li>Read <code>.env</code> into <code>Settings</code></li>
         <li>Connect to BigQuery: <code>BigQueryDatabase(...)</code></li>
         <li>Build the guard from the schema's tables: <code>QueryGuard(dialect, allowed_tables)</code></li>
-        <li>Wrap the database with the rules: <code>QueryGateway(database, guard, max_rows, max_bytes)</code></li>
+        <li>Wrap the database with the rules: <code>QueryGateway(database, guard, max_rows, max_bytes, scope)</code></li>
         <li>Give the tool its gateway: <code>make_run_sql(gateway)</code></li>
         <li>Give the agent its tool: <code>build_agent(model, [run_sql], prompt, max_llm_calls, checkpointer)</code></li>
       </ol>
@@ -151,9 +151,9 @@ tools.gateway = QueryGateway(...)</pre>
     <div class="panel good">
       <h3>2. The caller chooses what the tool is connected to</h3>
 <pre><span class="c"># real run</span>
-run_sql = make_run_sql(QueryGateway(BigQueryDatabase(project, max_bytes), guard, max_rows=50, max_bytes=max_bytes))
+run_sql = make_run_sql(QueryGateway(BigQueryDatabase(project, max_bytes), guard, max_rows=50, max_bytes=max_bytes, scope=scope))
 
-<span class="c"># later steps: a stricter gateway (brand scope, PII rules), same tool code</span>
+<span class="c"># later steps: a stricter gateway (PII rules), same tool code</span>
 run_sql = make_run_sql(stricter_gateway)</pre>
     </div>
     <div class="panel good">
