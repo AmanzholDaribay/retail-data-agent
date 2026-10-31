@@ -141,7 +141,7 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 | Model busy or unreachable | 30 s timeout and 1 SDK retry per LLM call; the CLI prints a clear message and keeps running. | built |
 | Outage mid-question | Unanswered tool calls get an error result, so the conversation stays usable for the next question. | built |
 | Empty result | The model rechecks its filters within the same budget, then says plainly that nothing matched. | planned |
-| Gemini 429 / 5xx | Backoff with jitter, then fall back to another Gemini model (`gemini-3.8-flash` → `gemini-3.5-flash-lite`, configurable). Fallback stays within Gemini. | planned |
+| Gemini 429 / 5xx | After its one SDK retry, a failed call goes to the next model in `LLM_FALLBACK_MODELS` (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`). Fallback models use the same provider, so Gemini falls back only to Gemini. Each Gemini model has its own free-tier quota (20 requests a day), so the fallback roughly doubles how many questions a free key can answer. Every call tries the primary model first, so the agent goes back to it once it recovers. | built |
 | BigQuery transient errors | Timeouts and retries. | planned |
 
 ## Observability

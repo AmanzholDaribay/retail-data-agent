@@ -79,14 +79,14 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
   </header>
 
   <div class="legend">
-    <span><i class="sw" style="border-color:var(--hook);background:var(--hook-soft)"></i>middleware hook (CallBudget)</span>
+    <span><i class="sw" style="border-color:var(--hook);background:var(--hook-soft)"></i>middleware (CallBudget, ModelFallback)</span>
     <span><i class="sw" style="border-color:var(--llm);background:var(--llm-soft)"></i>LLM</span>
     <span><i class="sw" style="border-color:var(--data);background:var(--data-soft)"></i>tool and data path</span>
     <span><i class="sw" style="border-color:var(--end);background:var(--end-soft)"></i>end of the question</span>
   </div>
 
   <figure>
-    <svg viewBox="0 0 900 540" role="img" aria-label="Agent loop drawn as a circle: before_model, LLM call, after_model, run_sql tool and tool result, with the gateway and BigQuery outside the circle and two exits to the end.">
+    <svg viewBox="0 0 900 540" role="img" aria-label="Agent loop drawn as a circle: before_model, LLM call (with ModelFallback switching to the next Gemini model on an error), after_model, run_sql tool and tool result, with the gateway and BigQuery outside the circle and two exits to the end.">
       <defs>
         <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" style="fill:var(--line)"/>
@@ -135,6 +135,13 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
       <text x="631" y="255" text-anchor="middle" class="sub">writes SQL or answer</text>
       <text x="631" y="282" text-anchor="middle" class="sub" style="fill:var(--hook)">5th call: no tools, must answer</text>
 
+      <!-- ModelFallback wraps the LLM call: on an error the same request goes to the next Gemini model -->
+      <line x1="540" y1="290" x2="540" y2="331" style="stroke:var(--hook); stroke-width:1.5; stroke-dasharray:4 3" marker-end="url(#ar)"/>
+      <rect x="468" y="334" width="140" height="58" rx="8" style="fill:var(--hook-soft); stroke:var(--hook); stroke-width:1.5; stroke-dasharray:5 3"/>
+      <text x="538" y="353" text-anchor="middle" class="mono" style="fill:var(--hook)">ModelFallback</text>
+      <text x="538" y="369" text-anchor="middle" class="sub">error → same request,</text>
+      <text x="538" y="383" text-anchor="middle" class="sub">next Gemini model</text>
+
       <!-- 3 after_model (lower right) -->
       <rect x="492" y="431" width="140" height="46" rx="8" style="fill:var(--hook-soft); stroke:var(--hook); stroke-width:1.5; stroke-dasharray:5 3"/>
       <text x="562" y="451" text-anchor="middle" class="mono" style="fill:var(--hook)">after_model</text>
@@ -182,13 +189,13 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
 
   <ol class="steps">
     <li><b>before_model</b>: CallBudget checks the count. Under 5, the loop goes on. If the 5th call still asked for SQL, it <b>jumps to END</b> with "I couldn't finish this question…". That is only a fallback: normally the 5th call answers.</li>
-    <li><b>LLM call</b>: the model either writes SQL (a tool call) or gives the final answer. It sees the earlier turns of the conversation too, so follow-up questions work. On the <b>5th call</b> CallBudget removes the tools and adds a note: answer now from the results you have, and say what is missing.</li>
+    <li><b>LLM call</b>: the model either writes SQL (a tool call) or gives the final answer. It sees the earlier turns of the conversation too, so follow-up questions work. On the <b>5th call</b> CallBudget removes the tools and adds a note: answer now from the results you have, and say what is missing. If the call fails (out of quota, busy, timed out), <b>ModelFallback</b> sends the same request to the next Gemini model, which gets the same tools and the same last-call rule. The switch doesn't count as an extra call; see <code>docs/model-switching.html</code>.</li>
     <li><b>after_model</b>: CallBudget adds 1 to the count. With no tool calls, the answer goes to <b>END</b>. With tool calls, the loop goes on.</li>
     <li><b>run_sql tool</b>: hands the SQL out of the circle to the <b>QueryGateway</b>. The guard checks it is one SELECT over the 4 tables, a dry-run checks it stays under the byte limit, and only then does it run in <b>BigQuery</b>.</li>
     <li><b>tool result</b>: the rows come back into the circle as a table (with a note if rows were cut off or none matched), or <code>Error: …</code> if the gateway or BigQuery rejected the query, and the loop returns to <b>before_model</b>.</li>
   </ol>
 
-  <footer>Code: <code>agent.py</code> (CallBudget, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>gateway.py</code>, <code>guard.py</code>, <code>db/bigquery.py</code>; the conversation is kept in <code>app.py</code>. See also <code>docs/middleware.html</code> and <code>docs/sql-errors.html</code>.</footer>
+  <footer>Code: <code>agent.py</code> (CallBudget, ModelFallback, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>gateway.py</code>, <code>guard.py</code>, <code>db/bigquery.py</code>; the conversation is kept in <code>app.py</code>. See also <code>docs/middleware.html</code>, <code>docs/model-switching.html</code> and <code>docs/sql-errors.html</code>.</footer>
 </main>
 </body>
 </html>
