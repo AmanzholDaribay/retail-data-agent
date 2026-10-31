@@ -18,6 +18,7 @@ from retail_agent.llm import build_model
 from retail_agent.observability import LlmCallLogger
 from retail_agent.schema import Schema, load_schema
 from retail_agent.tools import make_run_sql
+from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +94,15 @@ def _current_turn(messages: list[BaseMessage]) -> list[BaseMessage]:
     return messages[start + 1 :]
 
 
-def build_app(settings: Settings) -> App:
-    """Build the app with the real model and database."""
+def build_app(settings: Settings, user: User) -> App:
+    """Build the app with the real model and database, for `user`."""
     return assemble(
         model=build_model(settings, settings.llm_model),
         database=BigQueryDatabase(settings.gcp_project, settings.max_bytes_billed),
         schema=load_schema(settings.schema_path),
         prompt_template=settings.prompt_path.read_text(),
         settings=settings,
+        user=user,
         fallback_models=[build_model(settings, name) for name in settings.llm_fallback_models],
     )
 
@@ -111,11 +113,12 @@ def assemble(
     schema: Schema,
     prompt_template: str,
     settings: Settings,
+    user: User,
     fallback_models: Sequence[BaseChatModel] = (),
 ) -> App:
     """Wire the app from its parts. Tests call this directly with fakes."""
     guard = QueryGuard(database.dialect, allowed_tables=[schema.qualified_name(table) for table in schema.tables])
-    gateway = QueryGateway(database, guard, settings.max_rows, settings.max_bytes_billed)
+    gateway = QueryGateway(database, guard, settings.max_rows, settings.max_bytes_billed, user)
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(

@@ -3,6 +3,7 @@ import time
 
 from retail_agent.db.base import Database, QueryResult
 from retail_agent.guard import QueryGuard, QueryRejected
+from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,13 @@ class QueryGateway:
     Brand scoping and PII masking plug in here in later steps.
     """
 
-    def __init__(self, database: Database, guard: QueryGuard, max_rows: int, max_bytes: int) -> None:
+    def __init__(self, database: Database, guard: QueryGuard, max_rows: int, max_bytes: int, user: User) -> None:
         self._database = database
         self._guard = guard
         self._max_rows = max_rows
         self._max_bytes = max_bytes
+        # Whose question this is. Brand scoping (step 3) limits every query to user.brands.
+        self._user = user
 
     def run(self, sql: str) -> QueryResult:
         logger.info("SQL: %s", sql)

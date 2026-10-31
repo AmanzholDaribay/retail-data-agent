@@ -1,0 +1,9 @@
+# Who can use the agent, and which brands each user sees (pick one with --user).
+# Brand names must match products.brand exactly. `all` means every brand, with no brand filter.
+users:
+  ceo:
+    brands: all
+  levis_manager:
+    brands: ["Levi's"]
+  denim_lead:
+    brands: ["Levi's", "Calvin Klein"]

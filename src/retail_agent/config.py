@@ -25,3 +25,4 @@ class Settings(BaseSettings):
     max_rows: int = 50
     schema_path: Path = Path("schema.yaml")
     prompt_path: Path = Path("prompts/system.md")
+    users_path: Path = Path("users.yaml")

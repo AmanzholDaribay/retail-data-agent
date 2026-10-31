@@ -1,12 +1,15 @@
+import argparse
 import logging
 import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from retail_agent.app import build_app
 from retail_agent.config import Settings
+from retail_agent.users import UnknownUser, load_user
 
 LOG_FILE = Path("logs/retail-agent.log")
 
@@ -14,16 +17,28 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Ask retail analytics questions in plain language.")
+    parser.add_argument("--user", required=True, help="who is asking, one of the names in the users file")
+    args = parser.parse_args()
     # Export .env into the environment so the LLM and Google SDKs find their credentials.
     load_dotenv()
     _configure_logging()
     settings = Settings()
-    app = build_app(settings)
+    try:
+        user = load_user(settings.users_path, args.user)
+    except UnknownUser as error:
+        sys.exit(str(error))
+    except ValidationError as error:
+        sys.exit(f"{settings.users_path} is invalid:\n{error}")
+    app = build_app(settings, user)
+    brands = ", ".join(sorted(user.brands)) if user.brands else "all"
     logger.info("Started with model %s:%s", settings.llm_provider, settings.llm_model)
+    logger.info("User %s, brands: %s", user.name, brands)
     logger.info("Schema:\n%s", app.schema_text)
 
     print(_block(f"SCHEMA ({settings.schema_path})", app.schema_text, MAGENTA))
-    print(f"\nRetail data agent ({settings.llm_model}). Ask a question, or type 'exit' to quit.")
+    print(f"\nRetail data agent ({settings.llm_model}). Signed in as {user.name}, brands: {brands}.")
+    print("Ask a question, or type 'exit' to quit.")
     print(f"Logs: {LOG_FILE}")
     while True:
         try:
