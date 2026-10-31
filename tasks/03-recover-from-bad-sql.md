@@ -6,7 +6,7 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
 
 **Blocked by:** 01 (Walking skeleton)
 
-**Status:** built 2026-10-31; the manual check on real BigQuery is still to do
+**Status:** done 2026-10-31
 
 - [x] Adapters turn engine failures into one common query error with a readable message. Any other exception still surfaces as a bug. Known infrastructure reasons (outages, rate limits, access, billing, quota) still raise; every other rejected query goes to the model, since SQL mistakes are open-ended and the call budget caps a wrong guess. Errors are matched on BigQuery's reason, not the exception class, because the client raises an over-the-cap query as a 500.
 - [x] `run_sql` catches only that common query error and returns `Error: <message>` to the model.
@@ -17,4 +17,4 @@ Source: [step 1 spec](../docs/specs/step-1-core-loop.md).
   - the fake database fails the first query; the model sees `Error: <message>`, its corrected SQL runs, and the TurnResult lists both statements in order;
   - a model that never stops calling the tool ends at the 5-call budget with a clear message instead of hanging;
   - an answer on the 5th call is returned as a normal answer.
-- [ ] Manual check: a question that leads to a SQL error on real BigQuery (for example, after temporarily giving a column a misleading note in `schema.yaml`) still ends in an answer, and both SQL statements are shown.
+- [x] Manual check: a question that leads to a SQL error on real BigQuery (for example, after temporarily giving a column a misleading note in `schema.yaml`) still ends in an answer, and both SQL statements are shown. Passed 2026-10-31 without changing `schema.yaml`, because real errors happened on their own. On `gemini-3.5-flash-lite`, "top 5 brands by revenue last month?" first compared a TIMESTAMP with a DATETIME; the model read the error, fixed the SQL and answered, and the TurnResult held both statements. In a separate live report test on `gemini-3.6-flash`, one of 6 parallel queries failed ("Column name id is ambiguous") and only that query was fixed and re-run.

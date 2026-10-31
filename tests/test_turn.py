@@ -83,6 +83,73 @@ def test_an_answer_on_the_last_allowed_call_is_returned():
     assert result.answer == "Done after four queries."
 
 
+def test_a_follow_up_question_sees_the_earlier_turn():
+    sql = "SELECT brand, SUM(sale_price) AS revenue FROM order_items GROUP BY brand"
+    model = ScriptedChatModel(
+        script=[run_sql_call(sql), AIMessage("Brand A leads with $100."), AIMessage("The month before, Brand B led.")]
+    )
+    database = FakeDatabase([QueryResult(columns=["brand", "revenue"], rows=[("Brand A", 100.0)])])
+    app = assemble_app(model, database)
+
+    app.ask("Top brand last month?")
+    result = app.ask("And the month before?")
+
+    follow_up_input = [message.text for message in model.received[2]]
+    assert "Top brand last month?" in follow_up_input
+    assert "Brand A leads with $100." in follow_up_input
+    assert follow_up_input[-1] == "And the month before?"
+    assert result.answer == "The month before, Brand B led."
+    assert result.sql == []  # only this turn's SQL, not the earlier turn's
+
+
+def test_a_new_app_starts_a_fresh_conversation():
+    model = ScriptedChatModel(script=[AIMessage("First answer."), AIMessage("Second answer.")])
+
+    assemble_app(model, FakeDatabase([])).ask("First question")
+    assemble_app(model, FakeDatabase([])).ask("Second question")
+
+    fresh_input = [message.text for message in model.received[1]]
+    assert "First question" not in fresh_input
+    assert fresh_input[-1] == "Second question"
+
+
+def test_a_question_that_fails_mid_query_leaves_a_valid_conversation():
+    # An outage ends the question without a tool result. Providers reject a tool call with no result,
+    # so without one every later question in the run would fail too.
+    model = ScriptedChatModel(script=[run_sql_call("SELECT 1"), AIMessage("Second answer.")])
+    database = FakeDatabase([ConnectionError("BigQuery is down")])
+    app = assemble_app(model, database)
+
+    with pytest.raises(ConnectionError):
+        app.ask("First question")
+    result = app.ask("Second question")
+
+    tool_call, tool_result, second_question = model.received[1][-3:]
+    assert tool_call.tool_calls[0]["args"] == {"sql": "SELECT 1"}
+    assert isinstance(tool_result, ToolMessage)
+    assert tool_result.tool_call_id == tool_call.tool_calls[0]["id"]
+    assert tool_result.text.startswith("Error:")
+    assert "did not run" in tool_result.text
+    assert second_question.text == "Second question"
+    assert result.answer == "Second answer."
+    assert database.executed == ["SELECT 1"]  # the failed query is not retried on its own
+
+
+def test_the_call_budget_counts_each_question_separately():
+    def four_queries_then(answer: str) -> list[AIMessage]:
+        return [run_sql_call(f"SELECT {n}") for n in range(1, 5)] + [AIMessage(answer)]
+
+    model = ScriptedChatModel(script=four_queries_then("First done.") + four_queries_then("Second done."))
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[(n,)]) for n in range(1, 9)])
+    app = assemble_app(model, database)
+
+    app.ask("Count to four")
+    result = app.ask("Count to four again")
+
+    assert len(model.received) == 10
+    assert result.answer == "Second done."
+
+
 def test_model_sees_the_schema_and_dialect_in_its_system_message():
     model = ScriptedChatModel(script=[AIMessage("Hello.")])
 

@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: step 1 in progress (ticket 01 done; 02–04 and the sign-off 07 open). Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. Last updated 2026-10-30.
+Status: step 1 in progress (tickets 01, 03 and 04 done; 02 and the sign-off 07 open). Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. Last updated 2026-10-31.
 
 ## How we build
 
