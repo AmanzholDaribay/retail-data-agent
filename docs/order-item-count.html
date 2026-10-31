@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Order Item Count</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One reading column: one mixed basket seen before and after the fix, a real order, how the recount works, the option we dropped. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --scope: #2c6b3f;       /* the user's own brand, or what they correctly see */
+  --scope-soft: #e4f1e7;
+  --other: #6b6f78;       /* another brand's item */
+  --other-soft: #eceef1;
+  --fail: #a3352b;        /* the leak */
+  --fail-soft: #f8e5e2;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --scope: #7fcf96; --scope-soft: #1b3324; --other: #a3a9b3; --other-soft: #252c33;
+    --fail: #f08a7e; --fail-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --scope: #7fcf96; --scope-soft: #1b3324; --other: #a3a9b3; --other-soft: #252c33;
+  --fail: #f08a7e; --fail-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 900px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--scope); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+.short { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.short li::before { counter-increment: s; content: counter(s); font: 600 0.85rem var(--font-mono); color: var(--scope); }
+
+/* the basket */
+.basket { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.basket .tag { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.item { border: 1.5px solid var(--c); background: var(--c-soft); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; }
+.item b { color: var(--c); font-size: 0.95rem; }
+.item span { font-size: 0.82rem; color: var(--muted); }
+.mine  { --c: var(--scope); --c-soft: var(--scope-soft); }
+.other { --c: var(--other); --c-soft: var(--other-soft); border-style: dashed; }
+
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.panel { border: 1.5px solid var(--c); background: var(--c-soft); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.panel .tag { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--c); }
+.panel .big { font: 700 2.4rem/1 var(--font-body); color: var(--c); }
+.panel p { font-size: 0.92rem; }
+.bad  { --c: var(--fail);  --c-soft: var(--fail-soft); }
+.good { --c: var(--scope); --c-soft: var(--scope-soft); }
+
+pre {
+  margin: 0; padding: 12px 14px; border-radius: 8px; overflow-x: auto;
+  background: var(--surface); border: 1.5px solid var(--scope);
+  font: 0.82rem/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word;
+}
+pre .c { color: var(--muted); }
+pre .s { color: var(--scope); font-weight: 500; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+td.leak { color: var(--fail); font-weight: 600; }
+td.ok { color: var(--scope); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+
+.options { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.option { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.option.chosen { border-color: var(--scope); border-width: 2.5px; }
+.option .tag { font: 600 0.75rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.option.chosen .tag { color: var(--scope); }
+.option p { font-size: 0.92rem; }
+
+.rule {
+  border-left: 4px solid var(--scope); background: var(--scope-soft); border-radius: 0 10px 10px 0;
+  padding: 14px 16px; display: grid; gap: 6px;
+}
+footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; border-top: 1.5px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .items { grid-template-columns: 1fr 1fr; }
+  .compare, .options { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">Retail data agent · Brand scoping · as of 2026-10-31</div>
+    <h1>Why does a brand manager see a smaller item count on an order?</h1>
+    <p class="lede">One order can hold items from several brands. The brand filter lets a Levi's manager see that order, because it has a Levi's item, but the order's own <code>num_of_item</code> still counted every brand's items. So we recount it: a brand manager sees how many of <em>their</em> items are in the order. See also <a href="brand-scoping.html">how brand scoping works</a>.</p>
+    <div class="legend" aria-label="Color legend">
+      <span><i class="swatch" style="border-color:var(--scope);background:var(--scope-soft)"></i>The user's own brand</span>
+      <span><i class="swatch" style="border-color:var(--other);background:var(--other-soft);border-style:dashed"></i>Another brand</span>
+      <span><i class="swatch" style="border-color:var(--fail);background:var(--fail-soft)"></i>The leak</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>In short</h2>
+    <ol class="short">
+      <li>The brand filter picks <em>which</em> orders a manager sees, but it didn't change the numbers <em>inside</em> each order.</li>
+      <li><code>num_of_item</code> was the one such number: it counted other brands' items too, so it gave away other brands' sales.</li>
+      <li>Now, for a brand manager, it counts only their brands' items. The CEO still sees the real total.</li>
+    </ol>
+  </section>
+
+  <section aria-label="One basket, before and after">
+    <h2>One basket, seen by the Levi's manager</h2>
+    <div class="basket">
+      <div class="tag">Order 323 · real data</div>
+      <div class="items">
+        <div class="item mine"><b>Levi's</b><span>1 item</span></div>
+        <div class="item other"><b>Other brand</b><span>1 item</span></div>
+        <div class="item other"><b>Other brand</b><span>1 item</span></div>
+        <div class="item other"><b>Other brand</b><span>1 item</span></div>
+      </div>
+    </div>
+    <div class="compare">
+      <div class="panel bad">
+        <div class="tag">Before the fix</div>
+        <div class="big">4</div>
+        <p>The manager learns that this customer bought 3 items from other brands, which isn't their data.</p>
+      </div>
+      <div class="panel good">
+        <div class="tag">After the fix</div>
+        <div class="big">1</div>
+        <p>The manager sees their own item only. The other brands' items don't exist for them.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Checked on real orders">
+    <h2>Checked on real orders</h2>
+    <p>Three real orders that mix Levi's with other brands, checked on BigQuery on 2026-10-31:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Order</th><th>All items</th><th>Levi's</th><th>Manager sees</th></tr></thead>
+        <tbody>
+          <tr><td class="num">323</td><td class="num leak">4</td><td class="num">1</td><td class="num ok">1</td></tr>
+          <tr><td class="num">400</td><td class="num leak">4</td><td class="num">1</td><td class="num ok">1</td></tr>
+          <tr><td class="num">452</td><td class="num leak">2</td><td class="num">1</td><td class="num ok">1</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">That query scanned 4.5 MB and took 1.7 seconds.</p>
+  </section>
+
+  <section aria-label="How the recount works">
+    <h2>How the recount works</h2>
+    <p>The filtered <code>orders</code> table keeps every column as it is, and swaps only <code>num_of_item</code> for a count taken from the filtered items, which are already the user's brands only:</p>
+    <pre><span class="c">-- every column, but replace num_of_item with</span>
+<span class="c">-- the number of the user's items in this order</span>
+<span class="s">SELECT * REPLACE (</span>
+<span class="s">  (SELECT COUNT(*)</span>
+<span class="s">   FROM _brand_scoped_order_items AS items</span>
+<span class="s">   WHERE items.order_id = orders.order_id)</span>
+<span class="s">  AS num_of_item)</span>
+FROM `…orders` AS orders
+<span class="c">-- only orders with at least one of the user's items</span>
+WHERE order_id IN (
+  SELECT order_id FROM _brand_scoped_order_items)</pre>
+    <p>The AI's SQL doesn't change. Whether it writes <code>SELECT *</code>, <code>SUM(num_of_item)</code> or <code>AVG(num_of_item)</code>, it gets the recounted number. The column's note in <code>schema.yaml</code> tells the AI what the number means for a brand manager.</p>
+  </section>
+
+  <section aria-label="The option we dropped">
+    <h2>Recount, or block the column?</h2>
+    <div class="options">
+      <div class="option chosen">
+        <div class="tag">Recount · chosen</div>
+        <p>The number stays useful ("how many of my items per order") and every query shape is covered, including <code>SELECT *</code>.</p>
+      </div>
+      <div class="option">
+        <div class="tag">Block the column · dropped</div>
+        <p>Reject any query that uses <code>num_of_item</code>. But <code>SELECT *</code> uses it without naming it, so we'd have to track columns through every query, which is harder to get right and loses a useful number.</p>
+      </div>
+    </div>
+    <p class="note">The other <code>orders</code> columns (status and dates) describe the order itself, not other brands' items, so they need no change.</p>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>A brand filter must cover the numbers inside a row as well as the rows themselves, so any count that includes other brands is recounted from the user's own items.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Code: <code>orders_columns_with_scoped_item_count</code> in <code>src/retail_agent/order_item_count.py</code> builds the <code>SELECT * REPLACE (…)</code> list. <code>BrandScope</code> in <code>src/retail_agent/brand_scope.py</code> uses it for the filtered <code>orders</code> table (<code>_COLUMNS</code>), next to the row filter in <code>_FILTERS</code>. The CEO's queries aren't rewritten, so they keep the real count.</div>
+    <div>Tests: <code>tests/test_order_item_count.py</code>, and the exact rewritten SQL in <code>tests/test_brand_scope.py</code>.</div>
+    <div>See also <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>

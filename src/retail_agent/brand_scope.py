@@ -10,6 +10,7 @@ import sqlglot
 from sqlglot import exp
 
 from retail_agent.guard import QueryRejected, is_with_name, qualified_name
+from retail_agent.order_item_count import orders_columns_with_scoped_item_count
 
 # Our filtered tables get this prefix, so they can't be confused with WITH names the model writes.
 # If the model uses one of these names anyway, BigQuery rejects the duplicate name: the query fails, it doesn't leak.
@@ -23,6 +24,8 @@ _FILTERS = {
     "orders": f"order_id IN (SELECT order_id FROM {SCOPED_PREFIX}order_items)",
     "users": f"id IN (SELECT user_id FROM {SCOPED_PREFIX}order_items)",
 }
+# Which columns each filtered table keeps: all of them, except that orders recounts num_of_item from the user's items.
+_COLUMNS = {"orders": orders_columns_with_scoped_item_count(f"{SCOPED_PREFIX}order_items")}
 
 
 class BrandScope:
@@ -80,8 +83,11 @@ class BrandScope:
         )
 
     def _build_filtered_table_query(self, name: str) -> exp.Expr:
-        """E.g. for products: SELECT * FROM `...products` WHERE brand IN ('Levi\\'s')."""
+        """E.g. for products: SELECT * FROM `...products` AS products WHERE brand IN ('Levi\\'s')."""
         brands = ", ".join(exp.Literal.string(brand).sql(self._dialect) for brand in sorted(self._brands))
+        columns = _COLUMNS.get(name, "*")
         condition = _FILTERS[name].format(brands=brands)
-        return sqlglot.parse_one(f"SELECT * FROM `{self._dataset}.{name}` WHERE {condition}", read=self._dialect)
+        return sqlglot.parse_one(
+            f"SELECT {columns} FROM `{self._dataset}.{name}` AS {name} WHERE {condition}", read=self._dialect
+        )
 

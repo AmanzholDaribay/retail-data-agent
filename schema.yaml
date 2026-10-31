@@ -19,7 +19,7 @@ tables:
       shipped_at: {type: TIMESTAMP}
       delivered_at: {type: TIMESTAMP}
       returned_at: {type: TIMESTAMP}
-      num_of_item: {type: INT64, description: Number of items in the order}
+      num_of_item: {type: INT64, description: "Number of items in the order. For a brand manager, only items of their brands"}
 
   order_items:
     description: >-

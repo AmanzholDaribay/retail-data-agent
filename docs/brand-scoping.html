@@ -167,7 +167,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
       <span><i class="swatch" style="border-color:var(--ai);background:var(--ai-soft)"></i>What the AI wrote</span>
       <span><i class="swatch" style="border-color:var(--scope);background:var(--scope-soft)"></i>Filtered to the user's brands</span>
       <span><i class="swatch" style="border-color:var(--data);background:var(--data-soft)"></i>BigQuery</span>
-      <span><i class="swatch" style="border-color:var(--fail);background:var(--fail-soft)"></i>Stopped, or still open</span>
+      <span><i class="swatch" style="border-color:var(--fail);background:var(--fail-soft)"></i>Stopped</span>
     </div>
   </header>
 
@@ -236,7 +236,7 @@ GROUP BY brand</pre>
       <div class="step scope"><div>
         <p>The brand scope adds the four filtered tables at the front and points the query at them. The AI's own part is unchanged:</p>
         <pre class="scope"><span class="s">WITH _brand_scoped_products AS (</span>
-<span class="s">  SELECT * FROM `bigquery-public-data.thelook_ecommerce.products`</span>
+<span class="s">  SELECT * FROM `bigquery-public-data.thelook_ecommerce.products` AS products</span>
 <span class="s">  WHERE brand IN ('Levi\'s')),</span>           <span class="c">-- built by our code, from users.yaml</span>
 <span class="s">  _brand_scoped_order_items AS (…),</span>       <span class="c">-- the other three are always added too;</span>
 <span class="s">  _brand_scoped_orders AS (…),</span>            <span class="c">-- BigQuery skips the ones a query</span>
@@ -290,7 +290,7 @@ GROUP BY brand</pre>
           <tr><td>Subqueries, <code>UNION</code>s, a table used twice</td><td>Every table reference in the parsed query is swapped.</td><td class="ok">covered</td></tr>
           <tr><td>A WITH named like ours, <code>_brand_scoped_…</code></td><td>BigQuery rejects the duplicate name, so the query fails rather than leaks.</td><td class="ok">fails closed</td></tr>
           <tr><td>A table with no brand rule</td><td>Stopped: "can't be limited to your brands".</td><td class="ok">fails closed</td></tr>
-          <tr><td><code>orders.num_of_item</code></td><td>Counts every item in an order, other brands' items too, so it leaks a little.</td><td class="open">still open</td></tr>
+          <tr><td><code>orders.num_of_item</code></td><td>Recounted to the user's own items, so it no longer counts other brands' items. See <a href="order-item-count.html">why</a>.</td><td class="ok">fixed</td></tr>
         </tbody>
       </table>
     </div>
@@ -306,7 +306,7 @@ GROUP BY brand</pre>
   <footer>
     <div>Code: <code>BrandScope.apply</code> in <code>src/retail_agent/brand_scope.py</code> (the four filters are in <code>_FILTERS</code>), called by <code>QueryGateway.run</code> in <code>src/retail_agent/gateway.py</code> after <code>QueryGuard.check</code> and before the byte check. Built in <code>assemble</code> in <code>src/retail_agent/app.py</code> from <code>schema.dataset</code> and <code>user.brands</code>. The user comes from <code>load_user</code> in <code>src/retail_agent/users.py</code>, reading <code>users.yaml</code> (<code>USERS_PATH</code>). The filtered SQL is logged as <code>Scoped SQL:</code> in <code>logs/retail-agent.log</code>.</div>
     <div>Tests: <code>tests/test_brand_scope.py</code> (the tricky queries above, the CEO, the gateway end to end) and <code>tests/test_users.py</code>.</div>
-    <div>Plan: step 3 in <code>docs/plan.md</code>. See also <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
+    <div>Plan: step 3 in <code>docs/plan.md</code>. See also <a href="order-item-count.html">why num_of_item is recounted</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
   </footer>
 
 </main>

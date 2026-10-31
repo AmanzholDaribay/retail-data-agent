@@ -33,12 +33,14 @@ def test_every_table_is_swapped_for_its_filtered_version():
     sql = f"SELECT p.category, SUM(oi.sale_price) AS revenue FROM {ORDER_ITEMS} oi JOIN {PRODUCTS} p ON p.id = oi.product_id GROUP BY p.category"
 
     assert LEVIS.apply(sql) == (
-        f"WITH _brand_scoped_products AS (SELECT * FROM `{DATASET}.products` WHERE brand IN ('Levi\\'s')), "
-        f"_brand_scoped_order_items AS (SELECT * FROM `{DATASET}.order_items` "
+        f"WITH _brand_scoped_products AS (SELECT * FROM `{DATASET}.products` AS products WHERE brand IN ('Levi\\'s')), "
+        f"_brand_scoped_order_items AS (SELECT * FROM `{DATASET}.order_items` AS order_items "
         "WHERE product_id IN (SELECT id FROM _brand_scoped_products)), "
-        f"_brand_scoped_orders AS (SELECT * FROM `{DATASET}.orders` "
+        "_brand_scoped_orders AS (SELECT * REPLACE ((SELECT COUNT(*) FROM _brand_scoped_order_items AS items "
+        "WHERE items.order_id = orders.order_id) AS num_of_item) "
+        f"FROM `{DATASET}.orders` AS orders "
         "WHERE order_id IN (SELECT order_id FROM _brand_scoped_order_items)), "
-        f"_brand_scoped_users AS (SELECT * FROM `{DATASET}.users` "
+        f"_brand_scoped_users AS (SELECT * FROM `{DATASET}.users` AS users "
         "WHERE id IN (SELECT user_id FROM _brand_scoped_order_items)) "
         "SELECT p.category, SUM(oi.sale_price) AS revenue FROM _brand_scoped_order_items AS oi "
         "JOIN _brand_scoped_products AS p ON p.id = oi.product_id GROUP BY p.category"
