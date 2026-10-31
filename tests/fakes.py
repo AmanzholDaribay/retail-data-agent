@@ -46,14 +46,20 @@ class ScriptedChatModel(BaseChatModel):
 
 
 class FakeDatabase:
-    """Returns canned results in order and records every query it receives."""
+    """Returns canned results in order and records every query it receives.
+
+    A result can also be an exception, which the database raises instead of returning rows.
+    """
 
     dialect = "fakesql"
 
-    def __init__(self, results: list[QueryResult]) -> None:
+    def __init__(self, results: list[QueryResult | Exception]) -> None:
         self._results = list(results)
         self.executed: list[str] = []
 
     def execute(self, sql: str, max_rows: int) -> QueryResult:
         self.executed.append(sql)
-        return self._results.pop(0)
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result

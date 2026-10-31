@@ -5,7 +5,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from retail_agent.agent import build_agent
+from retail_agent.agent import BUDGET_REACHED, build_agent
 from retail_agent.config import Settings
 from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
@@ -43,7 +43,10 @@ class App:
             for call in message.tool_calls
             if call["name"] == "run_sql"
         ]
-        logger.info("Answered with %d SQL statements", len(sql))
+        if turn[-1].name == BUDGET_REACHED:
+            logger.warning("Stopped at the LLM call budget after %d SQL statements", len(sql))
+        else:
+            logger.info("Answered with %d SQL statements", len(sql))
         return TurnResult(answer=turn[-1].text, sql=sql)
 
 
@@ -75,5 +78,5 @@ def assemble(
     gateway = QueryGateway(database, settings.max_rows)
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
-    agent = build_agent(model, [make_run_sql(gateway)], system_prompt)
+    agent = build_agent(model, [make_run_sql(gateway)], system_prompt, settings.max_llm_calls)
     return App(agent, schema_text)
