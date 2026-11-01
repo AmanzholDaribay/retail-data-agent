@@ -9,6 +9,8 @@ class QueryResult:
     total_rows: int | None = None  # rows the query produced, before the row cap; None when unknown
     bytes_processed: int | None = None
     sql: str | None = None  # the SQL that ran, after the gateway rewrote it; set by the gateway
+    # Set by the gateway when it hid groups with fewer customers than this, so rows may be missing; None when not.
+    small_groups_hidden_below: int | None = None
 
     @property
     def truncated(self) -> bool:

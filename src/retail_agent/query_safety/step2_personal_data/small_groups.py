@@ -40,7 +40,7 @@ class SmallGroups:
 
     def __init__(self, dialect: str, schema: Schema, min_group_size: int) -> None:
         self._dialect = dialect
-        self._min_group_size = min_group_size
+        self.min_group_size = min_group_size
         project, dataset = schema.dataset.split(".")
         # The nested shape sqlglot expects: {project: {dataset: {table: {column: type}}}}.
         self._columns = {
@@ -66,7 +66,7 @@ class SmallGroups:
                 raise QueryRejected(
                     f"`{table_name}.{first_column}` can be used only inside a total (COUNT, SUM, AVG ... with GROUP BY), "
                     "in the same SELECT that reads the table, not listed one row per customer. "
-                    f"Groups with fewer than {self._min_group_size} customers are never shown."
+                    f"Groups with fewer than {self.min_group_size} customers are never shown."
                 )
             if _keeps_every_row(scope.expression):
                 raise QueryRejected(
@@ -92,7 +92,7 @@ class SmallGroups:
     def _hide_small_groups(self, select: exp.Select, table_alias: str, table_name: str) -> None:
         """Add HAVING COUNT(DISTINCT alias.id) >= min, ANDed with any HAVING the model wrote."""
         condition = sqlglot.parse_one(
-            f"COUNT(DISTINCT {table_alias}.{ID_COLUMNS[table_name]}) >= {self._min_group_size}", read=self._dialect
+            f"COUNT(DISTINCT {table_alias}.{ID_COLUMNS[table_name]}) >= {self.min_group_size}", read=self._dialect
         )
         existing = select.args.get("having")
         select.set("having", exp.Having(this=exp.and_(existing.this, condition) if existing else condition))

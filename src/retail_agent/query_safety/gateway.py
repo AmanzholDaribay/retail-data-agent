@@ -75,7 +75,11 @@ class QueryGateway:
             # Step 4: size. Stop the query before it scans more than max_bytes.  -> _check_bytes below
             self._check_bytes(scoped_sql)
             # Every step passed: run the rewritten query, keeping at most max_rows rows.
-            result = dataclasses.replace(self._database.execute(scoped_sql, self._max_rows), sql=scoped_sql)
+            # When step 2 added the small-group HAVING, the result says so: missing rows are hidden, not absent.
+            hidden_below = self._small_groups.min_group_size if grouped_sql != sql else None
+            result = dataclasses.replace(
+                self._database.execute(scoped_sql, self._max_rows), sql=scoped_sql, small_groups_hidden_below=hidden_below
+            )
         except QueryRejected as error:
             logger.warning("SQL rejected: %s", error)
             raise

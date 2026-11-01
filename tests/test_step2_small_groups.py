@@ -159,6 +159,32 @@ def test_the_gateway_never_runs_a_listing_of_a_tagged_column():
     assert "only inside a total" in tool_output_seen_by_model(model)
 
 
+@pytest.mark.parametrize(
+    "rows, note",
+    [
+        ([], "hidden for privacy, so there may be data that can't be shown"),
+        ([("Berlin", 252)], "hidden for privacy, so these rows may not add up to the full total"),
+    ],
+)
+def test_the_model_is_told_when_small_groups_were_hidden(rows, note):
+    sql = f"SELECT city, COUNT(*) AS customers FROM {USERS} WHERE country = 'Germany' GROUP BY city"
+    model = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("Done.")])
+    database = FakeDatabase([QueryResult(columns=["city", "customers"], rows=rows)])
+
+    assemble_app(model, database).ask("Customers per city in Germany?")
+
+    assert f"Note: groups with fewer than 5 customers are {note}" in tool_output_seen_by_model(model)
+
+
+def test_a_query_without_tagged_columns_gets_no_privacy_note():
+    model = ScriptedChatModel(script=[run_sql_call(f"SELECT brand, COUNT(*) FROM {PRODUCTS} GROUP BY brand"), AIMessage("Done.")])
+    database = FakeDatabase([QueryResult(columns=["brand", "count"], rows=[("Levi's", 3)])])
+
+    assemble_app(model, database).ask("Products per brand?")
+
+    assert "hidden for privacy" not in tool_output_seen_by_model(model)
+
+
 def test_for_a_brand_manager_the_having_and_the_brand_filter_both_apply():
     sql = f"SELECT country, COUNT(*) AS customers FROM {USERS} GROUP BY country"
     model = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("Done.")])
