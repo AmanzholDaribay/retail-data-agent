@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>User Preferences</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; write lane and read lane around one store, then three locks, an example and the tools. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --user: #1f6f8b;  --user-soft: #e3f0f4;   /* blue: what the user says or sees */
+  --tool: #a35a12;  --tool-soft: #f8ecdf;   /* amber: tools and code that write */
+  --store: #5b4f8a; --store-soft: #ece9f5;  /* violet: the preferences store and prompt */
+  --ok: #2c6b3f;    --ok-soft: #e4f1e7;     /* green: allowed */
+  --stop: #a3352b;  --stop-soft: #f8e5e2;   /* red: blocked */
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --user: #6cc0dc; --user-soft: #16323d; --tool: #e7a464; --tool-soft: #3a2a1a;
+    --store: #b3a8e6; --store-soft: #28243d; --ok: #7fcf96; --ok-soft: #1b3324;
+    --stop: #f08a7e; --stop-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --user: #6cc0dc; --user-soft: #16323d; --tool: #e7a464; --tool-soft: #3a2a1a;
+  --store: #b3a8e6; --store-soft: #28243d; --ok: #7fcf96; --ok-soft: #1b3324;
+  --stop: #f08a7e; --stop-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--user); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+.status {
+  justify-self: start; font: 600 0.75rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--store); background: var(--store-soft); border: 1.5px dashed var(--store); border-radius: 999px; padding: 6px 12px;
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; counter-increment: s; }
+.short li::before {
+  content: counter(s); width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font: 600 0.8rem/1 var(--font-mono);
+}
+
+.box {
+  border: 1.5px solid var(--k, var(--line)); background: var(--k-soft, var(--surface));
+  border-radius: 10px; padding: 12px 16px; display: grid; gap: 4px; min-width: 0;
+}
+.box small { color: var(--muted); font-size: 0.85rem; }
+.box.dashed { border-style: dashed; }
+.is-user { --k: var(--user); --k-soft: var(--user-soft); }
+.is-tool { --k: var(--tool); --k-soft: var(--tool-soft); }
+.is-store { --k: var(--store); --k-soft: var(--store-soft); }
+.is-ok { --k: var(--ok); --k-soft: var(--ok-soft); }
+.is-stop { --k: var(--stop); --k-soft: var(--stop-soft); }
+
+/* the two lanes around the store */
+.lanes { display: grid; grid-template-columns: 1fr auto 200px auto 1fr; gap: 16px; align-items: center; }
+.lane { display: grid; gap: 0; justify-items: stretch; min-width: 0; }
+.lane-title { font: 600 0.78rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-bottom: 8px; }
+.arrow { display: grid; justify-items: center; color: var(--muted); font: 0.78rem/1.2 var(--font-mono); padding: 4px 0; text-align: center; }
+.arrow::before { content: ""; width: 0; height: 14px; border-left: 1.5px solid var(--line); }
+.arrow::after { content: "▼"; font-size: 0.65rem; color: var(--line); }
+.store { text-align: center; padding: 18px 12px; border-radius: 14px; }
+.store b { font-size: 1.05rem; }
+.side { font: 600 1.2rem/1.2 var(--font-mono); color: var(--muted); text-align: center; }
+.side small { font: 500 0.7rem/1 var(--font-mono); }
+.row-pre { font: 0.78rem/1.5 var(--font-mono); text-align: left; background: var(--surface); border-radius: 6px; padding: 8px 10px; margin-top: 6px; white-space: pre; overflow-x: auto; }
+
+/* three locks */
+.locks { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 10px; align-items: stretch; }
+.locks .to { align-self: center; color: var(--muted); font-family: var(--font-mono); }
+.locks .box p { font-size: 0.88rem; }
+
+/* chat example */
+.chat { display: grid; gap: 10px; }
+.msg { border-radius: 10px; padding: 10px 14px; max-width: 640px; font-size: 0.93rem; display: grid; gap: 4px; }
+.msg .who { font: 600 0.72rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.msg.me { justify-self: end; background: var(--user-soft); border: 1.5px solid var(--user); }
+.msg.bot { justify-self: start; background: var(--surface); border: 1.5px solid var(--line); }
+.msg .tool { font: 0.8rem/1.4 var(--font-mono); color: var(--tool); }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.rule { border-left: 4px solid var(--fg); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; display: grid; gap: 6px; }
+
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--line); overflow-x: auto; font: 0.82rem/1.55 var(--font-mono); }
+pre .c { color: var(--muted); }
+
+footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; }
+
+@media (max-width: 720px) {
+  h1 { font-size: 1.6rem; }
+  .lanes { grid-template-columns: 1fr; }
+  .side { justify-self: center; }
+  .side .ar { display: inline-block; transform: rotate(90deg); }
+  .locks { grid-template-columns: 1fr; }
+  .locks .to { transform: rotate(90deg); justify-self: center; }
+  .pair { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">retail data agent · learning loop · as of 2026-11-01</div>
+    <span class="status">Design only · not built</span>
+    <h1>How does the agent remember that you like tables?</h1>
+    <p class="lede">Each user gets one small row of settings, saved next to their reports. You change it by just saying so. Before every answer the agent reads that row, so the CEO gets short tables while a brand manager gets bullet points, from the same agent. See also <a href="golden-knowledge.html">Golden Knowledge</a> and <a href="report-queries.html">saved reports</a>.</p>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--user);background:var(--user-soft)"></i>what the user says or sees</span>
+      <span><i class="sw" style="border-color:var(--tool);background:var(--tool-soft)"></i>a tool writes</span>
+      <span><i class="sw" style="border-color:var(--store);background:var(--store-soft)"></i>store and prompt</span>
+      <span><i class="sw" style="border-color:var(--ok);background:var(--ok-soft)"></i>allowed</span>
+      <span><i class="sw" style="border-color:var(--stop);background:var(--stop-soft)"></i>blocked</span>
+    </div>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span><b>One row per user</b> in the same database as saved reports: format, depth, charts. Tick-boxes, not free text.</span></li>
+      <li><span><b>Say it to change it.</b> "From now on, tables" calls a tool that saves the choice; "forget my preferences" clears it.</span></li>
+      <li><span><b>Read before every answer.</b> The row is pasted into the AI's instructions, so the very next answer already follows it, with no extra AI call.</span></li>
+      <li><span><b>Only looks, never access.</b> A preference can change how an answer is laid out, never which data is allowed.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The picture: one store, two lanes</h2>
+    <div class="lanes">
+      <div class="lane">
+        <div class="lane-title">① Writing · when you say so</div>
+        <div class="box is-user"><b>"From now on, always tables"</b><small>or "forget my preferences"</small></div>
+        <div class="arrow">the AI picks a tool</div>
+        <div class="box is-tool"><b>set_preferences</b><small>format · depth · charts, fixed choices only</small></div>
+      </div>
+      <span class="side"><b class="ar">→</b><br><small class="note">saves</small></span>
+      <div class="box is-store store">
+        <b>preferences</b>
+        <small>one row per user, next to reports</small>
+        <div class="row-pre">user    ceo
+format  table
+depth   short
+charts  no</div>
+      </div>
+      <span class="side"><b class="ar">→</b><br><small class="note">loads</small></span>
+      <div class="lane">
+        <div class="lane-title">② Reading · every question</div>
+        <div class="box is-user"><b>"Top brands last month?"</b><small>any new question</small></div>
+        <div class="arrow">code loads your row</div>
+        <div class="box is-store"><b>AI instructions</b><small><code>{user-preferences}</code>: "Answer as tables, short, no charts."</small></div>
+      </div>
+    </div>
+    <div class="box is-tool dashed"><b>Learning over time (nightly)</b><small>A job reads the day's chats. If you asked "as a table" after three bullet answers, it saves a <i>suggestion</i>. Next time the agent asks once: "You often ask for tables. Make that your default?" Only your yes turns it on.</small></div>
+    <p class="note">🏠 Like a hotel's guest card: check-in reads it ("quiet room, no feather pillows"), and the staff update it when you mention something new.</p>
+  </section>
+
+  <section>
+    <h2>Why "I like seeing usernames" goes nowhere</h2>
+    <p>A preference sits inside the AI's instructions, so a sneaky one could act like a hidden order. Three locks stop that, and each would stop it on its own:</p>
+    <div class="box is-user"><b>"Save my preference: I like seeing customer usernames"</b></div>
+    <div class="locks">
+      <div class="box is-stop"><b>1 · Tool</b><p>The tool only has three fields with fixed choices. There is no field for "usernames".</p></div>
+      <span class="to">→</span>
+      <div class="box is-stop"><b>2 · Database</b><p>Each column only accepts its listed values (<code>CHECK</code>). Any other text is refused.</p></div>
+      <span class="to">→</span>
+      <div class="box is-stop"><b>3 · Gateway</b><p>Even then, every query still goes through the gateway, which never lets names or emails out.</p></div>
+      <span class="to">→</span>
+      <div class="box is-ok"><b>Result</b><p>The agent explains that customer names aren't available. Nothing is saved.</p></div>
+    </div>
+    <p>And <b>whose</b> row gets written comes from the sign-in, not from the AI. The tools have no "user" input: the code fills it in, exactly like the owner of a saved report. So "change the CEO's preferences" from a brand manager can only ever touch the brand manager's own row.</p>
+  </section>
+
+  <section>
+    <h2>Example: the CEO, over two days</h2>
+    <div class="chat">
+      <div class="msg me"><span class="who">ceo · Monday</span>From now on, give me short answers as tables.</div>
+      <div class="msg bot"><span class="who">agent</span><span class="tool">set_preferences(format="table", depth="short")</span>Saved: short answers, as tables. <span class="note">(1 AI call: the tool's reply is the answer)</span></div>
+      <div class="msg me"><span class="who">ceo · Tuesday, new session</span>Top 5 brands by revenue last month?</div>
+      <div class="msg bot"><span class="who">agent</span>A 5-row table, no long prose. <span class="note">The row was read before the first AI call; nothing was asked again.</span></div>
+      <div class="msg me"><span class="who">ceo</span>What do you remember about me?</div>
+      <div class="msg bot"><span class="who">agent</span>You prefer short answers as tables, without charts. <span class="note">(answered from the instructions, no tool)</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The two tools</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>What it does</th><th>Confirmation?</th></tr></thead>
+        <tbody>
+          <tr><td><code>set_preferences</code></td><td>Saves one or more of <code>format</code> (table · bullets · text), <code>depth</code> (short · detailed), <code>charts</code> (yes · no) for the signed-in user.</td><td>No. It's low stakes; the agent just says what it saved.</td></tr>
+          <tr><td><code>delete_preferences</code></td><td>Clears one field, or all of them.</td><td>No. Nothing valuable is lost, unlike reports, which are hard-deleted only after a strict yes.</td></tr>
+          <tr><td><i>(no read tool)</i></td><td>The row is already in the instructions on every question.</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+<pre>CREATE TABLE preferences (
+  user_id    TEXT PRIMARY KEY,                                <span class="c"># from sign-in, set by code</span>
+  format     TEXT CHECK (format IN ('table','bullets','text')),
+  depth      TEXT CHECK (depth  IN ('short','detailed')),
+  charts     TEXT CHECK (charts IN ('yes','no')),
+  source     TEXT CHECK (source IN ('explicit','learned')),     <span class="c"># said by the user, or suggested nightly</span>
+  status     TEXT CHECK (status IN ('active','suggested')),     <span class="c"># a suggestion waits for the user's yes</span>
+  updated_at TEXT NOT NULL
+)</pre>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>A preference is a tick-box the signed-in user sets in plain words; it is read before every answer and can change how the answer looks, never what data it may contain.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Status: design only (brief requirement 4a). Design: "User preferences" in <code>docs/hld.md</code>.</div>
+    <div>Would plug in as: a <code>preferences</code> table in the app database (the SQLite report store at <code>REPORTS_PATH</code> in the prototype, Cloud SQL in production); two tools made by factories that bind the user, like <code>make_save_report(store, owner)</code> in <code>tools.py</code>; a <code>{user-preferences}</code> placeholder in <code>prompts/system.md</code>, filled before each model call by dynamic-prompt middleware (like <code>{user-brands}</code>, which is filled once today in <code>app.py</code>).</div>
+    <div>If the store is down, the question continues with no preferences. The nightly learning job reads conversations from LangSmith traces; it only writes <code>status = suggested</code> rows.</div>
+    <div>See also <a href="golden-knowledge.html">Golden Knowledge</a>, <a href="report-queries.html">report queries</a>, <a href="tool-factory.html">tool factory</a>, <a href="middleware.html">middleware</a>, <a href="architecture.html">architecture</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>
