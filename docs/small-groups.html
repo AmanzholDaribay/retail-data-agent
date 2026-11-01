@@ -143,7 +143,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
 
   <header style="display:grid; gap:10px">
     <div class="eyebrow">retail data agent · personal data · as of 2026-11-01</div>
-    <span class="status">Built 2026-11-01 · ticket 10</span>
+    <span class="status">Built 2026-11-01 · ticket 10 · privacy note added 2026-11-01</span>
     <h1>How do we stop a total from describing one person?</h1>
     <p class="lede">Columns like age and city are fine in a total over many customers, but a "total" over one customer is really that customer. We tag those columns in <code>schema.yaml</code>. The gateway then allows them only inside totals, and makes BigQuery drop every group with fewer than 5 customers. See also <a href="sql-journey.html">one query's full journey</a> and <a href="sql-parser-rules.html">every parser rule</a>.</p>
     <div class="legend">
@@ -162,6 +162,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       <li><span><b>Listed one row per person?</b> Rejected. The AI is told to use the column only inside a total.</span></li>
       <li><span><b>Inside a total?</b> Allowed, and the gateway adds <code>HAVING COUNT(DISTINCT user_id) &gt;= 5</code>, so BigQuery drops the small groups itself.</span></li>
       <li><span><b>No tagged column?</b> Nothing changes. "Top customers by spend" still works through pseudonyms.</span></li>
+      <li><span><b>Rows were hidden?</b> The result tells the AI so, with a note under the table. It then says "hidden for privacy", never "no data".</span></li>
     </ol>
   </section>
 
@@ -276,6 +277,31 @@ FROM users</pre>
   </section>
 
   <section>
+    <h2>The AI is told when rows were hidden</h2>
+    <p>The AI never sees the <code>HAVING</code>: the gateway adds it after the AI wrote the SQL. So an empty result looked like "nothing there". Asked for the top 5 brands in Essen, where each brand had fewer than 5 buyers, it ran 4 queries hunting for a spelling mistake and then answered "no sales", which was false. Now the gateway marks the result, and the text the AI reads ends with a note.</p>
+    <div class="pair">
+      <div class="box is-stop">
+        <b>Before: what the AI read</b>
+<pre>The query returned no rows.
+Columns: brand, revenue</pre>
+        <p>❌ "There are no sales in Essen." 4 queries.</p>
+      </div>
+      <div class="box is-ok">
+        <b>Now: what the AI reads</b>
+<pre>The query returned no rows.
+Columns: brand, revenue
+<span class="add">Note: groups with fewer than 5 customers
+are hidden for privacy, so there may be
+data that can't be shown at this level
+of detail.</span></pre>
+        <p>✅ "The detail for Essen is hidden for privacy." 1 query.</p>
+      </div>
+    </div>
+    <p>When some rows came back, the note says instead that they <b>may not add up to the full total</b>. "257 cities in Germany" next to "4,198 German customers" no longer reads as if the cities hold everyone. A prompt rule backs the note up: never call it "no data", suggest a broader grouping (the country instead of one city), and don't re-run the query.</p>
+    <p class="note">🏠 Like a waiter who can't forget the allergy warning, because the kitchen sticks a label on the plate.</p>
+  </section>
+
+  <section>
     <h2>What it doesn't stop</h2>
     <div class="box is-stop">
       <b>Subtracting two totals</b>
@@ -293,6 +319,7 @@ FROM users</pre>
   <footer>
     <div>Ticket: <code>tasks/10-demographics-only-in-totals-of-5.md</code>. Plan: step 3 in <code>docs/plan.md</code>. Tests: <code>tests/test_step2_small_groups.py</code>.</div>
     <div>Code: <code>query_safety/step2_personal_data/small_groups.py</code> (<code>SmallGroups.apply</code>), called from <code>QueryGateway.run</code> after the column check and before pseudonyms. Tag read in <code>schema.py</code> (<code>Column.aggregate_only</code>) from <code>schema.yaml</code>. Setting: <code>MIN_GROUP_SIZE</code> (default 5), written into the SQL as a plain number: it isn't secret, and the log shows exactly what ran.</div>
+    <div>The note: when <code>SmallGroups.apply</code> changed the SQL, the gateway sets <code>QueryResult.small_groups_hidden_below</code> (the minimum, else <code>None</code>), and <code>format_result</code> in <code>result_format.py</code> appends the note, the same way as the "only the first N rows" note. Prompt rule in <code>prompts/system.md</code>.</div>
     <div>Each SELECT is checked on its own: a total inside a <code>WITH</code> step gets the <code>HAVING</code> on that step; a step that only passes <code>city</code> along is rejected. The id counted is the one of the table the tagged column comes from (<code>users.id</code>, <code>orders.user_id</code>).</div>
     <div>See also <a href="sql-journey.html">one query's full journey</a>, <a href="sql-parser-rules.html">SQL parser rules</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>.</div>
   </footer>
