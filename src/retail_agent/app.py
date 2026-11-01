@@ -182,7 +182,9 @@ def assemble(
         database, guard, personal_data, small_groups, pseudonyms, settings.max_rows, settings.max_bytes_billed, scope
     )
     schema_text = schema.render()
-    system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
+    # The brand scope above is the real lock; telling the model the brands lets it say so instead of querying blind.
+    user_brands = ", ".join(sorted(user.brands)) if user.brands else "all brands"
+    system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text, **{"user-brands": user_brands})
     reports = ReportStore(settings.reports_path)
     agent = build_agent(
         model,

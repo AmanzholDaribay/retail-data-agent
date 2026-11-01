@@ -37,8 +37,10 @@ def main() -> None:
     logger.info("User %s, brands: %s", user.name, brands)
     logger.info("Schema:\n%s", app.schema_text)
 
-    print(_block(f"SCHEMA ({settings.schema_path})", app.schema_text, MAGENTA))
-    print(f"\nRetail data agent ({settings.llm_model}). Signed in as {user.name}, brands: {brands}.")
+    if args.verbose:
+        print(_block(f"SCHEMA ({settings.schema_path})", app.schema_text, MAGENTA))
+        print()
+    print(f"Retail data agent ({settings.llm_model}). Signed in as {user.name}, brands: {brands}.")
     print("Ask a question, or type 'exit' to quit.")
     print(f"Logs: {LOG_FILE}")
     while True:

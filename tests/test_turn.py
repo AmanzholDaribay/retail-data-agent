@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from retail_agent.agent import LAST_CALL_NOTE
 from retail_agent.app import SqlRun
 from retail_agent.db.base import QueryError, QueryResult
+from retail_agent.users import User
 
 
 def test_answers_a_question_with_the_sql_it_ran():
@@ -310,3 +311,14 @@ def test_a_fallback_model_on_the_last_allowed_call_gets_no_tools():
     assert result.answer == "Brand A, from the results so far."
     assert fallback.had_tools == [False]
     assert LAST_CALL_NOTE in fallback.received[0][0].text
+
+
+def test_model_sees_which_brands_the_user_can_see():
+    levis_model = ScriptedChatModel(script=[AIMessage("Hello.")])
+    ceo_model = ScriptedChatModel(script=[AIMessage("Hello.")])
+
+    assemble_app(levis_model, FakeDatabase([]), user=User(name="levis_manager", brands=frozenset({"Levi's"}))).ask("Hi")
+    assemble_app(ceo_model, FakeDatabase([])).ask("Hi")
+
+    assert "This user can see data for: Levi's." in levis_model.received[0][0].text
+    assert "This user can see data for: all brands." in ceo_model.received[0][0].text
