@@ -2,6 +2,7 @@
 
 import logging
 
+import sqlglot
 import streamlit as st
 import yaml
 from dotenv import load_dotenv
@@ -90,12 +91,14 @@ def _show_sql(runs) -> None:
     for number, run in enumerate(runs, start=1):
         mark = "✅" if run.error is None else "❌"
         with st.expander(f"SQL {number} of {len(runs)} {mark}"):
-            st.code(run.sql, language="sql")
+            st.code(run.sql, language="sql", wrap_lines=True)
             if run.error is not None:
                 st.error(run.error)
             if run.sent_sql is not None:
                 st.caption("Sent to BigQuery")
-                st.code(run.sent_sql, language="sql")
+                # The gateway sends one long line; laid out one clause per line it can be read whole.
+                pretty = sqlglot.transpile(run.sent_sql, read="bigquery", write="bigquery", pretty=True)[0]
+                st.code(pretty, language="sql", wrap_lines=True)
 
 
 main()
