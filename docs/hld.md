@@ -204,6 +204,40 @@ flowchart LR
 | Safety | Three locks: typed tool fields, the database `CHECK`, and the query gateway, which still blocks PII whatever the prompt says. The prompt states that preferences change only how answers look, never what data is allowed. | A preference can't widen access or carry a prompt injection. |
 | Failure | If the store is down, the question continues with no preferences. | Preferences improve answers; they are never a single point of failure. |
 
+## Evaluation (design only)
+
+The brief's quality assurance: how we know the agent is good before deploying a change, and how we keep watching it after. Two parts: an **offline** accuracy score from the Golden trios, and **online** checks on the LangSmith traces of real use. Not built; the prototype has 184 unit tests with a scripted model and a fake database, which check the safety rules but not answer quality. Visual explainer: [evaluation.html](evaluation.html).
+
+```mermaid
+flowchart LR
+    subgraph offline["① Offline: accuracy (before every change)"]
+        trios[("golden.trios")] --> run["Agent answers each question<br/>that trio left out of retrieval"]
+        run --> compare["Run agent SQL and trio SQL<br/>the same day, compare rows"]
+        compare --> score["Accuracy, e.g. 26 / 30<br/>below the baseline: don't ship"]
+    end
+
+    subgraph online["② Online: real use (every day)"]
+        traces[("LangSmith traces")] --> errors["Errors over time<br/>rejected · failed · 429 · no data"]
+        traces --> judge["LLM judge on a sample<br/>does the SQL fit the question?<br/>was a rejection justified?"]
+        errors --> review["Bad trace"]
+        judge --> review
+    end
+    review -->|"Add to dataset"| regress[("Regression set")]
+    regress --> run
+```
+
+| Part | Design | Why |
+|---|---|---|
+| Offline accuracy | Each approved Golden trio is a test case. The agent answers the trio's question with **that trio left out** of Golden retrieval, so it can't copy the SQL. The agent's SQL and the trio's SQL both run on the same day, and the rows are compared (same columns and values, order ignored unless the question asks for a ranking, numbers within rounding). Accuracy = matching cases ÷ all cases. Also reported: right on the first try vs after a retry, and cases the gateway rejected. | thelook is regenerated daily, so stored answers go stale; stored reference SQL doesn't. Comparing rows, not SQL text, accepts two different queries that are both right. |
+| When it runs | Once for a baseline, then before every prompt, model, schema-note or Golden change. A score below the baseline blocks the change. Small set (30–50 cases) on a paid key, since the free tier allows about 20 calls a day. | "Evaluate before deployment" (requirement 6) as a gate, not a one-off. |
+| Online errors | Dashboards from the traces: share of questions with a rejected SQL, a failed SQL, a model fallback or timeout, an answer saying no data, and LLM calls per question. A jump after a release points to the trace that broke. | We know when it fails and can open the exact message exchange (requirement 7). |
+| LLM judge | A LangSmith LLM-as-judge evaluator on a daily sample of traces, with yes/no questions: does the SQL answer the question asked (period, metric, filters)? Is every number in the answer present in a tool result? Was each gateway rejection justified, or did it block a safe query? The judge is a different model from the agent and sees the question, the SQL and the tool results, not just the answer. | Catches what code can't: intent, e.g. "last quarter" answered with "the last 90 days". |
+| Trusting the judge | Before relying on it, the judge also scores the offline cases. If it agrees with the row comparison on most of them (e.g. 28 of 30), its scores on live traffic are trusted. | A judge that hasn't been checked against known answers is just another opinion. |
+| Analyst rejections | Candidate trios that analysts reject in Golden review are counted by reason (wrong metric, wrong period, wrong join). | They show which kinds of question the agent gets wrong most. |
+| Regression set | Any bad trace, from the judge or from an error, is added to a LangSmith dataset with the correct SQL, and that set runs alongside the trios before every change. This session's bugs are its first cases: "top brands in Essen" answered "no sales" when groups were hidden; a Levi's manager asking about Nike got the off-topic reply; `TIMESTAMP_SUB … MONTH` failed a whole round; a report claimed the "highest-converting traffic sources" with no query behind it. | Traces find problems; the dataset makes sure they stay fixed. |
+| UX | Thumbs up or down on each answer (stored as LangSmith feedback), how often users rephrase the same question, and answer time. | Accuracy alone misses answers that are right but unhelpful or slow. |
+| Safety checks | Pass or fail in code, no judge: no email or name pattern in any answer, a brand manager's sent SQL always carries the brand filter, at most 5 LLM calls per question. Already covered by unit tests for the gateway; run on traces as well. | Safety failures are never averaged into a score. |
+
 ## Resilience
 
 | Failure | Handling | Status |
