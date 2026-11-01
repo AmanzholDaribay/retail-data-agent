@@ -16,8 +16,8 @@ from retail_agent.llm import build_model
 from retail_agent.observability import LlmCallLogger
 from retail_agent.query_safety.gateway import QueryGateway
 from retail_agent.query_safety.step1_guard import QueryGuard
-from retail_agent.query_safety.step2_personal_data import PersonalDataCheck
-from retail_agent.query_safety.step3_brand_scope import BrandScope
+from retail_agent.query_safety.step2_personal_data.columns import PersonalDataCheck
+from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
 from retail_agent.tools import make_run_sql
 from retail_agent.users import User

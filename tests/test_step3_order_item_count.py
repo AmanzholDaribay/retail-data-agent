@@ -1,8 +1,8 @@
 import sqlglot
 from harness import ORDER_ITEMS
 
-from retail_agent.query_safety.step3_brand_scope import BrandScope
-from retail_agent.query_safety.step3_order_item_count import orders_columns_with_scoped_item_count
+from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
+from retail_agent.query_safety.step3_brand_scope.order_item_count import orders_columns_with_scoped_item_count
 
 DATASET = "bigquery-public-data.thelook_ecommerce"
 

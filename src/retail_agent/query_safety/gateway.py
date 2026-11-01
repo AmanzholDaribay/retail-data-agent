@@ -12,8 +12,8 @@ import time
 
 from retail_agent.db.base import Database, QueryResult
 from retail_agent.query_safety.step1_guard import QueryGuard, QueryRejected
-from retail_agent.query_safety.step2_personal_data import PersonalDataCheck
-from retail_agent.query_safety.step3_brand_scope import BrandScope
+from retail_agent.query_safety.step2_personal_data.columns import PersonalDataCheck
+from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,9 @@ class QueryGateway:
         try:
             # Step 1: the guard. One SELECT that reads only the allowed tables.  -> step1_guard.py
             self._guard.check(sql)
-            # Step 2: personal data. Only columns listed in schema.yaml, no *.   -> step2_personal_data.py
+            # Step 2: personal data. Only columns listed in schema.yaml, no *.   -> step2_personal_data/columns.py
             self._personal_data.check(sql)
-            # Step 3: brand scope. Rewrite the SQL so the user sees only their brands.  -> step3_brand_scope.py
+            # Step 3: brand scope. Rewrite the SQL so the user sees only their brands.  -> step3_brand_scope/brand_scope.py
             scoped_sql = self._scope.apply(sql)
             if scoped_sql != sql:
                 logger.info("Scoped SQL: %s", scoped_sql)

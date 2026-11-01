@@ -195,7 +195,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1.5px solid color-
     <li><b>tool result</b>: the rows come back into the circle as a table (with a note if rows were cut off or none matched), or <code>Error: …</code> if the gateway or BigQuery rejected the query, and the loop returns to <b>before_model</b>.</li>
   </ol>
 
-  <footer>Code: <code>agent.py</code> (CallBudget, ModelFallback, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>query_safety/gateway.py</code>, <code>query_safety/step1_guard.py</code>, <code>query_safety/step2_personal_data.py</code>, <code>query_safety/step3_brand_scope.py</code>, <code>db/bigquery.py</code>; the conversation is kept in <code>app.py</code>. See also <code>docs/middleware.html</code>, <code>docs/model-switching.html</code> and <code>docs/sql-errors.html</code> and <code>docs/sql-parser-rules.html</code>.</footer>
+  <footer>Code: <code>agent.py</code> (CallBudget, ModelFallback, the loop via <code>create_agent</code>), <code>tools.py</code> (run_sql), <code>query_safety/gateway.py</code>, <code>query_safety/step1_guard.py</code>, <code>query_safety/step2_personal_data/columns.py</code>, <code>query_safety/step3_brand_scope/brand_scope.py</code>, <code>db/bigquery.py</code>; the conversation is kept in <code>app.py</code>. See also <code>docs/middleware.html</code>, <code>docs/model-switching.html</code> and <code>docs/sql-errors.html</code> and <code>docs/sql-parser-rules.html</code>.</footer>
 </main>
 </body>
 </html>
