@@ -1,34 +1,36 @@
 # High-level design: Retail data agent
 
-A CLI chat agent that answers retail analytics questions in plain language over BigQuery's public `thelook_ecommerce` dataset (`orders`, `order_items`, `products`, `users`). It writes and runs SQL, explains the result, and never exposes customer PII or data outside the user's brands.
+A chat agent (CLI, plus a Streamlit page) that answers retail analytics questions in plain language over BigQuery's public `thelook_ecommerce` dataset (`orders`, `order_items`, `products`, `users`). It writes and runs SQL, explains the result, and never exposes customer PII or data outside the user's brands.
 
-This document covers only what is decided. Each component is marked **built** (in the code today) or **planned** (decided, not built yet). The build order lives in [plan.md](plan.md).
+Each part is marked **built** (in the code today), **design only** (the brief asks for a design, not code) or a **known limit** (left out of the prototype on purpose). The build order lives in [plan.md](plan.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     user(["Manager or CEO"]) --> cli["CLI<br/>retail-agent"]
+    user --> ui["Streamlit page<br/>make ui"]
     cli --> app["App<br/>one conversation"]
+    ui --> app
     app --> agent["Agent loop<br/>LangChain create_agent"]
     agent <--> llm["Gemini<br/>Google AI Studio"]
 
     subgraph middleware["Agent middleware"]
         budget["LLM call budget"]
-        confirm["Delete confirmation"]
+        fallback["Model fallback"]
     end
     agent --- middleware
 
     subgraph tools["Tools"]
         run_sql["run_sql"]
-        report_tools["save / list / delete report"]
+        report_tools["save / list / delete report<br/>delete waits for confirmation"]
     end
     agent --> tools
 
-    run_sql --> gateway["Query gateway<br/>guard · brand scope · PII · row cap"]
+    run_sql --> gateway["Query gateway<br/>guard · PII · small groups · brand scope · byte cap"]
     gateway --> adapter["Database adapter<br/>BigQuery"]
     adapter --> bq[("BigQuery<br/>thelook_ecommerce")]
-    report_tools --> store[("Report store<br/>local")]
+    report_tools --> store[("Report store<br/>local SQLite")]
 
     subgraph config["Config, loaded at startup"]
         schema["schema.yaml"]
@@ -40,29 +42,27 @@ flowchart LR
 
     app -.-> logs["Log file"]
     app -.-> langsmith["LangSmith traces<br/>off by default"]
-
-    classDef planned stroke-dasharray: 5 5
-    class confirm,report_tools,store,langsmith planned
 ```
 
-Dashed boxes are planned. The gateway box is built with its guard, brand scope, row cap and the first two PII layers (column allow-list, customer pseudonyms); the check on returned rows is planned. `user → brands` is `users.yaml`.
+Everything in the diagram is built. The one gateway check not built is a second look at the returned rows (a known limit). `user → brands` is `users.yaml`.
 
 ## Components
 
 | Component | Responsibility | Where | Status |
 |---|---|---|---|
 | CLI | Chat loop in the terminal. `--user` picks who is asking, from `users.yaml` (`users.py`). Prints each answer with the SQL that produced it (`--verbose`: every SQL tried, ✅ or ❌ with the reason); a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
-| App | One conversation per CLI run. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
+| Streamlit page | Browser chat over the same `App`: a user dropdown (switching starts a new conversation), each SQL as a fold-out with the SQL sent to BigQuery, and Yes / Cancel buttons for deletes. Optional extra (`uv sync --extra ui`), started with `make ui`. | `ui.py` | built |
+| App | One conversation per CLI run or page session. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
 | Agent loop | The model ↔ tools loop, from LangChain `create_agent` (LangGraph underneath). Remembers earlier turns through a checkpointer. | `agent.py` | built |
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |
 | Call budget | Limits a question to `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. The last allowed call gets no tools, so it answers from the results already fetched. | `agent.py` | built |
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
-| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, the personal-data step (column allow-list, then customer pseudonyms), the brand scope, a dry run against the byte limit, then the query. | `query_safety/` (`gateway.py`, `step1_guard.py`, `step2_personal_data/`, `step3_brand_scope/`) | built (guard, column allow-list, pseudonyms, brand scope, byte limit, row cap); result checks planned |
+| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, the personal-data step (column allow-list, small groups, customer pseudonyms), the brand scope, a dry run against the byte limit, then the query, and marks a result when small groups were hidden. | `query_safety/` (`gateway.py`, `step1_guard.py`, `step2_personal_data/`, `step3_brand_scope/`) | built; a second check on returned rows is a known limit |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
 | Schema | `schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
-| Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time. | — | planned |
-| Delete confirmation | Code (not the model) shows the exact reports to be deleted and waits for typed confirmation before a hard delete. | — | planned |
-| Observability | Log file of questions, LLM calls and SQL today; LangSmith tracing on top. | `observability.py` | log file built, LangSmith planned |
+| Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time, in a local SQLite file (`REPORTS_PATH`). | `reports.py`, `tools.py` | built |
+| Delete confirmation | Code (not the model) shows the exact reports to be deleted and waits for an explicit `yes` (a LangGraph interrupt in `delete_reports`) before a hard delete. | `tools.py`, `app.py` (`App.confirm`) | built |
+| Observability | Log file of questions, LLM calls and SQL; LangSmith tracing on top, switched on in `.env`. | `observability.py`, `app.py` | built |
 
 ## How a question is answered
 
@@ -121,10 +121,10 @@ Each layer is enforced in code; the prompt is only the first line.
 | Analysis only | The system prompt refuses off-topic requests and attempts to override instructions, reveal the prompt or change data. | built |
 | Query guard | The parsed query must be a single SELECT over the 4 allowed tables; DML, DDL, scripting, other tables and table functions are rejected. A free dry run rejects anything above the byte limit before it costs anything. | built |
 | Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. Done by rewriting the SQL (`query_safety/step3_brand_scope/brand_scope.py`). For a brand manager, `orders.num_of_item` is recounted from their own items (`query_safety/step3_brand_scope/order_item_count.py`). | built |
-| PII protection | PII columns are tagged in `schema.yaml` and blocked based on the parsed query, not name matching; results are checked again before rows reach the model. Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. | planned |
+| PII protection | Only columns listed in `schema.yaml` can be read (an allow-list resolved from the parsed query, not name matching), so personal columns are never selected and `*` is rejected (`step2_personal_data/columns.py`). Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. A second check on the returned rows is a known limit. | built |
 | Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. Done by rewriting the SQL for every user (`step2_personal_data/customer_pseudonyms.py`); the salt reaches BigQuery only as a query parameter. | built |
 | Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. Done by adding `HAVING COUNT(DISTINCT <customer id>) >= MIN_GROUP_SIZE` to every total of a tagged column (`step2_personal_data/small_groups.py`). | built |
-| Report ownership | Only a report's author can see or delete it, enforced in the store query. | planned |
+| Report ownership | Only a report's author can see or delete it: the owner comes from the code, not the model, and every read and delete filters on it in the store's SQL (`reports.py`). | built |
 
 Because masking happens in the gateway, PII never reaches the LLM, the logs or the traces.
 
@@ -312,9 +312,9 @@ New tools run inside the same `MAX_LLM_CALLS` budget (each round of tool calls n
 | Bad SQL | The error goes back to the model to fix, within the call budget. | built |
 | Model busy or unreachable | 30 s timeout and 1 SDK retry per LLM call; the CLI prints a clear message and keeps running. | built |
 | Outage mid-question | Unanswered tool calls get an error result, so the conversation stays usable for the next question. | built |
-| Empty result | The model rechecks its filters within the same budget, then says plainly that nothing matched. | planned |
+| Empty result | The model rechecks its filters once within the same budget, then says plainly that nothing matched. When the small-group rule hid every row, the result says so, and the model reports the detail as hidden for privacy instead of "no data". | built |
 | Gemini 429 / 5xx | After its one SDK retry, a failed call goes to the next model in `LLM_FALLBACK_MODELS` (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`). Fallback models use the same provider, so Gemini falls back only to Gemini. Each Gemini model has its own free-tier quota (20 requests a day), so the fallback roughly doubles how many questions a free key can answer. Every call tries the primary model first, so the agent goes back to it once it recovers. | built |
-| BigQuery transient errors | Timeouts and retries. | planned |
+| BigQuery transient errors | Today a transient error ends that question with a clear message and the chat keeps running. Retries with backoff are the production step. | known limit |
 
 ## Observability
 
