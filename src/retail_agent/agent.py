@@ -22,7 +22,8 @@ BUDGET_REACHED = "budget_reached"
 # Added to the system message on the last allowed call, which can't call tools.
 LAST_CALL_NOTE = (
     "This is your last step for this question: you can't run more queries. "
-    "Answer now from the results you already have, and say plainly what is missing."
+    "Answer now from the results you already have, and say plainly what is missing. "
+    "If the user asked for a report, write it in full and say it can't be saved this time."
 )
 
 
@@ -64,6 +65,12 @@ class CallBudget(ModelCallLimitMiddleware):
                 )
             ]
         return update
+
+
+def current_turn(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
+    """Messages after the latest question, so earlier turns don't leak into this one."""
+    start = max(i for i, message in enumerate(messages) if isinstance(message, HumanMessage))
+    return list(messages[start + 1 :])
 
 
 def _tool_exchanges_as_text(messages: Sequence[AnyMessage]) -> list[AnyMessage]:

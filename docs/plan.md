@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: steps 1 and 2 done (2026-10-31); step 3 in progress: `--user`, brand scoping (including the `num_of_item` recount) and the column allow-list that blocks personal data (ticket 08) and pseudonymous customer ids (ticket 09, 2026-11-01) and demographics only in totals of 5+ customers (ticket 10, 2026-11-01) are built; the check on returned rows is next. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early, after briefly being dropped, because the client named it as the default; LangSmith is just configuration (step 6). The main build work left is the rest of step 3 (PII) and step 5 (reports). Last updated 2026-10-31.
+Status: steps 1 and 2 done (2026-10-31); step 3 in progress: `--user`, brand scoping (including the `num_of_item` recount) and the column allow-list that blocks personal data (ticket 08) and pseudonymous customer ids (ticket 09, 2026-11-01) and demographics only in totals of 5+ customers (ticket 10, 2026-11-01) are built; the check on returned rows is left. Step 5 started 2026-11-01: creating and saving a report (ticket 11) is built; listing (12) and deleting with confirmation (13) are next. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early, after briefly being dropped, because the client named it as the default; LangSmith is just configuration (step 6). The main build work left is step 5 (list and delete reports) and the step 3 row check. Last updated 2026-11-01.
 
 ## How we build
 
@@ -169,6 +169,7 @@ Lives inside the gateway. This is the most heavily graded part.
 ### Step 5: Reports: create, save and delete
 
 - Creating a report: when asked (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs and writes findings, insights and action items. Multi-step questions ("why are users in state X underspending, and how do they compare with state Y?") work the same way. To stay within the 5-call budget, the prompt asks the model to send independent queries together as parallel tool calls in one reply (Gemini supports this), so a report needs 1–2 query rounds plus the call that writes it. See the open decision on the report budget if that isn't enough.
+- **Built 2026-11-01** ([ticket 11](../tasks/11-create-and-save-a-report.md)): the prompt asks for parallel `run_sql` calls in one reply and at most 2 query rounds. A `save_report(title, report)` tool (`return_direct`, so no extra LLM call) saves the report; the code adds the owner, conversation id, time, question and the SQL behind it (rejected or failed queries left out). Checked on Gemini and BigQuery: "Create a report for Q1 2026 including insights and action items for Q2" as the CEO took 2 LLM calls, 6 queries in one reply, and saved one row. On the last allowed call there are no tools, so the model says the report can't be saved then.
 - A local store (e.g. SQLite) that records the owner, the conversation id and the creation time of every report. A report holds the question, the SQL and the answer (confirmed by the client). Tools: save, list, delete.
 - Deletion selects reports by content or by conversation, to cover the brief's two examples: "Delete all reports mentioning Client X" (a text search over the question and answer, e.g. SQLite FTS5) and "Delete all the reports we made in this conversation" (filter on the current conversation id).
 - Ownership is checked in the store query, not left to the prompt.
@@ -214,4 +215,4 @@ The docs grow with each step, and this step finishes them. Start the HLD outline
 
 - ~~**Scoping mechanism.**~~ Decided 2026-10-31: rewrite the SQL (see step 3).
 - ~~**Measuring group size.**~~ Decided 2026-11-01: `HAVING COUNT(DISTINCT <customer id>)` added by the gateway on every total of a tagged column (see step 3).
-- **Call budget for reports.** If a report or a multi-step question doesn't fit in 5 LLM calls even with parallel queries, ask Harry whether report requests may use more (e.g. 8), or split the report across turns. Decide in step 5.
+- ~~**Call budget for reports.**~~ Decided 2026-11-01: keep 5. The live Q1 report took 2 calls with 6 parallel queries, so there's no need to ask Harry for more.

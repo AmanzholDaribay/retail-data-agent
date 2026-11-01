@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     pseudonym_salt: SecretStr = Field(default_factory=_random_salt)
     # Totals of age, city and other aggregate_only columns over fewer customers than this are hidden.
     min_group_size: int = Field(default=5, ge=1)
+    # Saved reports (step 5). Created on the first save.
+    reports_path: Path = Path("data/reports.sqlite3")
 
     @field_validator("pseudonym_salt")
     @classmethod

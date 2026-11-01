@@ -123,7 +123,7 @@ Each layer is enforced in code; the prompt is only the first line.
 | Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. Done by rewriting the SQL (`query_safety/step3_brand_scope/brand_scope.py`). For a brand manager, `orders.num_of_item` is recounted from their own items (`query_safety/step3_brand_scope/order_item_count.py`). | built |
 | PII protection | PII columns are tagged in `schema.yaml` and blocked based on the parsed query, not name matching; results are checked again before rows reach the model. Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. | planned |
 | Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. Done by rewriting the SQL for every user (`step2_personal_data/customer_pseudonyms.py`); the salt reaches BigQuery only as a query parameter. | built |
-| Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. | planned |
+| Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. Done by adding `HAVING COUNT(DISTINCT <customer id>) >= MIN_GROUP_SIZE` to every total of a tagged column (`step2_personal_data/small_groups.py`). | built |
 | Report ownership | Only a report's author can see or delete it, enforced in the store query. | planned |
 
 Because masking happens in the gateway, PII never reaches the LLM, the logs or the traces.
@@ -131,7 +131,7 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 ## Reports and deletion
 
 - Asked for a report (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs, sending independent queries together as parallel tool calls to stay within the call budget, then writes findings, insights and action items.
-- Reports are saved to a local store with owner, conversation id and creation time.
+- Reports are saved to a local SQLite store (`REPORTS_PATH`) with owner, conversation id, creation time, the question, the SQL behind it and the report text, through a `save_report` tool whose result is the final answer (no extra LLM call). The owner and conversation come from the code, not the model. Built; listing and deletion are planned.
 - Deletion selects reports by content ("delete all reports mentioning Client X") or by conversation ("delete all the reports we made in this conversation").
 - The model can only propose a deletion. Code shows the exact list and waits for explicit typed confirmation (a LangGraph interrupt) inside the chat, then hard-deletes. Cancelling leaves everything as it was and the chat continues.
 

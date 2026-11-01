@@ -15,5 +15,8 @@ wheels/
 # Agent logs
 logs/
 
+# Saved reports (REPORTS_PATH)
+data/
+
 # Editor settings
 .idea/

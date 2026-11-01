@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
-from retail_agent.agent import BUDGET_REACHED, build_agent
+from retail_agent.agent import BUDGET_REACHED, build_agent, current_turn
 from retail_agent.config import Settings
 from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
@@ -21,7 +21,8 @@ from retail_agent.query_safety.step2_personal_data.customer_pseudonyms import SA
 from retail_agent.query_safety.step2_personal_data.small_groups import SmallGroups
 from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
-from retail_agent.tools import make_run_sql
+from retail_agent.reports import ReportStore
+from retail_agent.tools import make_run_sql, make_save_report
 from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class App:
         except Exception as error:
             self._close_unanswered_tool_calls(config, error)
             raise
-        turn = _current_turn(state["messages"])
+        turn = current_turn(state["messages"])
         sql = [
             call["args"]["sql"]
             for message in turn
@@ -92,12 +93,6 @@ class App:
             logger.info("Saved an error result for %d unanswered tool calls", len(results))
 
 
-def _current_turn(messages: list[BaseMessage]) -> list[BaseMessage]:
-    """Messages after the latest question, so earlier turns don't leak into this result."""
-    start = max(i for i, message in enumerate(messages) if isinstance(message, HumanMessage))
-    return messages[start + 1 :]
-
-
 def build_app(settings: Settings, user: User) -> App:
     """Build the app with the real model and database, for `user`."""
     return assemble(
@@ -135,9 +130,10 @@ def assemble(
     )
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
+    reports = ReportStore(settings.reports_path)
     agent = build_agent(
         model,
-        [make_run_sql(gateway)],
+        [make_run_sql(gateway), make_save_report(reports, user.name)],
         system_prompt,
         settings.max_llm_calls,
         checkpointer=InMemorySaver(),
