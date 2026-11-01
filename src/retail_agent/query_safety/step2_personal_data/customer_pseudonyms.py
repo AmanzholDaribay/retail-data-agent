@@ -34,7 +34,7 @@ PSEUDONYM_PREFIX = "_pseudonymized_"
 SALT_PARAMETER = "pseudonym_salt"
 
 # The customer id column of each table that has one.
-_ID_COLUMNS = {"users": "id", "orders": "user_id", "order_items": "user_id"}
+ID_COLUMNS = {"users": "id", "orders": "user_id", "order_items": "user_id"}
 # 12 hex characters keep tokens low; for about 100,000 customers, two sharing a nickname is about 1 in 50,000.
 _PSEUDONYM = "CONCAT('cust_', SUBSTR(TO_HEX(SHA256(CONCAT(@" + SALT_PARAMETER + ", CAST({column} AS STRING)))), 1, 12))"
 
@@ -54,7 +54,7 @@ class CustomerPseudonyms:
             if is_with_name(table, statement):
                 continue
             name = qualified_name(table).removeprefix(f"{self._dataset}.")
-            if name not in _ID_COLUMNS:
+            if name not in ID_COLUMNS:
                 continue
             # Keep the old name as the alias, so `users.id` in the model's SQL still resolves.
             alias = table.args.get("alias") or exp.TableAlias(this=exp.to_identifier(name))
@@ -86,7 +86,7 @@ class CustomerPseudonyms:
 
     def _build_hashed_table_query(self, name: str) -> exp.Expr:
         """E.g. for users: SELECT * REPLACE (CONCAT('cust_', ...) AS id) FROM `...users` AS users."""
-        column = _ID_COLUMNS[name]
+        column = ID_COLUMNS[name]
         pseudonym = _PSEUDONYM.format(column=column)
         return sqlglot.parse_one(
             f"SELECT * REPLACE ({pseudonym} AS {column}) FROM `{self._dataset}.{name}` AS {name}", read=self._dialect

@@ -9,6 +9,8 @@ class Column:
     name: str
     type: str
     description: str | None = None
+    # Only inside a total over enough customers (age, city, ...). Enforced by the gateway, not the prompt.
+    aggregate_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,8 @@ class Schema:
             lines = [header]
             for column in table.columns:
                 line = f"- {column.name} {column.type}"
+                if column.aggregate_only:
+                    line += " (only in totals)"
                 if column.description:
                     line += f": {column.description}"
                 lines.append(line)
@@ -53,7 +57,12 @@ def load_schema(path: Path) -> Schema:
             name=table_name,
             description=table.get("description"),
             columns=[
-                Column(name=column_name, type=column["type"], description=column.get("description"))
+                Column(
+                    name=column_name,
+                    type=column["type"],
+                    description=column.get("description"),
+                    aggregate_only=column.get("aggregate_only", False),
+                )
                 for column_name, column in table["columns"].items()
             ],
         )

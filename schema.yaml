@@ -5,6 +5,9 @@
 # latitude/longitude) are left out on purpose, and the query gateway blocks any column not
 # listed here. Customer ids (users.id, orders.user_id, order_items.user_id) are listed as
 # STRING: the gateway replaces them with pseudonyms before the model's SQL reads them.
+#
+# `aggregate_only: true` marks demographic columns: the gateway lets them reach the model only
+# inside a total over at least MIN_GROUP_SIZE customers (default 5).
 
 dataset: bigquery-public-data.thelook_ecommerce
 
@@ -15,7 +18,7 @@ tables:
       order_id: {type: INT64}
       user_id: {type: STRING, description: "Customer pseudonym such as cust_72ac84091163; the real id is never shown. Joins users.id"}
       status: {type: STRING, description: "One of Processing, Shipped, Complete, Cancelled, Returned"}
-      gender: {type: STRING, description: "Customer gender, M or F"}
+      gender: {type: STRING, description: "Customer gender, M or F", aggregate_only: true}
       created_at: {type: TIMESTAMP, description: When the order was placed (UTC)}
       shipped_at: {type: TIMESTAMP}
       delivered_at: {type: TIMESTAMP}
@@ -56,10 +59,10 @@ tables:
     description: Customers.
     columns:
       id: {type: STRING, description: "Customer pseudonym such as cust_72ac84091163; the real id is never shown"}
-      age: {type: INT64}
-      gender: {type: STRING, description: M or F}
-      city: {type: STRING}
-      state: {type: STRING}
-      country: {type: STRING}
-      traffic_source: {type: STRING, description: "How the customer found the store, e.g. Search, Organic, Email"}
+      age: {type: INT64, aggregate_only: true}
+      gender: {type: STRING, description: M or F, aggregate_only: true}
+      city: {type: STRING, aggregate_only: true}
+      state: {type: STRING, aggregate_only: true}
+      country: {type: STRING, aggregate_only: true}
+      traffic_source: {type: STRING, description: "How the customer found the store, e.g. Search, Organic, Email", aggregate_only: true}
       created_at: {type: TIMESTAMP, description: When the customer signed up (UTC)}

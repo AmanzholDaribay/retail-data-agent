@@ -18,7 +18,7 @@ def model_output_for(sql: str, database: FakeDatabase, **settings: Any) -> str:
 @pytest.mark.parametrize(
     "sql",
     [
-        f"SELECT age, city FROM {USERS}",
+        f"SELECT id, created_at FROM {USERS}",
         f"SELECT u.country, COUNT(*) AS customers FROM {USERS} u JOIN {ORDERS} o ON u.id = o.user_id GROUP BY u.country",
         f"WITH monthly AS (SELECT DATE_TRUNC(DATE(created_at), MONTH) AS month, sale_price FROM {ORDER_ITEMS}) "
         "SELECT month, SUM(sale_price) FROM monthly GROUP BY month",

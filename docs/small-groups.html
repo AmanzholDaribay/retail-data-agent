@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Small Groups Hidden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a decision fork (tagged? → total? → HAVING), then the tag, an example and the limits. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --tag: #5b4f8a;   --tag-soft: #ece9f5;   /* violet: config (schema.yaml tag, MIN_GROUP_SIZE) */
+  --rewrite: #a35a12; --rewrite-soft: #f8ecdf; /* amber: the gateway rewrites the SQL */
+  --ok: #2c6b3f;  --ok-soft: #e4f1e7;      /* green: runs, rows shown */
+  --stop: #a3352b; --stop-soft: #f8e5e2;   /* red: rejected or hidden */
+  --plain: #1f6f8b; --plain-soft: #e3f0f4; /* blue: untouched, runs as today */
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --tag: #b3a8e6; --tag-soft: #28243d; --rewrite: #e7a464; --rewrite-soft: #3a2a1a;
+    --ok: #7fcf96; --ok-soft: #1b3324; --stop: #f08a7e; --stop-soft: #3a1d1a;
+    --plain: #6cc0dc; --plain-soft: #16323d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --tag: #b3a8e6; --tag-soft: #28243d; --rewrite: #e7a464; --rewrite-soft: #3a2a1a;
+  --ok: #7fcf96; --ok-soft: #1b3324; --stop: #f08a7e; --stop-soft: #3a1d1a;
+  --plain: #6cc0dc; --plain-soft: #16323d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--plain); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+.status {
+  justify-self: start; font: 600 0.75rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--rewrite); background: var(--rewrite-soft); border: 1.5px dashed var(--rewrite); border-radius: 999px; padding: 6px 12px;
+}
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+/* in short */
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; counter-increment: s; }
+.short li::before {
+  content: counter(s); width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font: 600 0.8rem/1 var(--font-mono);
+}
+
+/* role-colored boxes */
+.box {
+  border: 1.5px solid var(--k, var(--line)); background: var(--k-soft, var(--surface));
+  border-radius: 10px; padding: 12px 16px; display: grid; gap: 6px; min-width: 0;
+}
+.box small { color: var(--muted); font-size: 0.85rem; }
+.box pre { background: var(--surface); }
+.is-tag { --k: var(--tag); --k-soft: var(--tag-soft); }
+.is-rewrite { --k: var(--rewrite); --k-soft: var(--rewrite-soft); }
+.is-ok { --k: var(--ok); --k-soft: var(--ok-soft); }
+.is-stop { --k: var(--stop); --k-soft: var(--stop-soft); }
+.is-plain { --k: var(--plain); --k-soft: var(--plain-soft); }
+
+/* the fork */
+.fork { display: grid; gap: 0; justify-items: center; }
+.fork > .box { width: min(560px, 100%); }
+.question {
+  border: 1.5px dashed var(--muted); border-radius: 999px; padding: 8px 18px; background: var(--surface);
+  font-weight: 600; text-align: center;
+}
+.arrow { display: grid; justify-items: center; color: var(--muted); font: 0.8rem/1.2 var(--font-mono); padding: 4px 0; }
+.arrow::before { content: ""; width: 0; height: 16px; border-left: 1.5px solid var(--line); }
+.arrow::after { content: "▼"; font-size: 0.7rem; color: var(--line); }
+.branches { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; align-items: start; }
+.branch { display: grid; gap: 0; justify-items: center; min-width: 0; }
+.branch > .box { width: 100%; }
+.label { font: 600 0.8rem/1 var(--font-mono); color: var(--muted); padding: 6px 0; }
+
+/* side by side */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.trio .box p, .pair .box p { font-size: 0.9rem; }
+
+/* takeaway */
+.rule { border-left: 4px solid var(--fg); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; display: grid; gap: 6px; }
+
+/* tables and code */
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+tr.hidden td { background: var(--stop-soft); color: var(--stop); text-decoration: line-through; }
+tr.hidden td:last-child { text-decoration: none; }
+td.num { font-family: var(--font-mono); }
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--line); overflow-x: auto; font: 0.82rem/1.55 var(--font-mono); }
+pre .c { color: var(--muted); }
+pre .add { color: var(--rewrite); font-weight: 500; }
+pre .tagged { color: var(--tag); font-weight: 500; }
+
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+
+footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .pair, .trio, .branches { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">retail data agent · personal data · as of 2026-11-01</div>
+    <span class="status">Built 2026-11-01 · ticket 10</span>
+    <h1>How do we stop a total from describing one person?</h1>
+    <p class="lede">Columns like age and city are fine in a total over many customers, but a "total" over one customer is really that customer. We tag those columns in <code>schema.yaml</code>. The gateway then allows them only inside totals, and makes BigQuery drop every group with fewer than 5 customers. See also <a href="sql-journey.html">one query's full journey</a> and <a href="sql-parser-rules.html">every parser rule</a>.</p>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--tag);background:var(--tag-soft)"></i>config: the tag and the limit</span>
+      <span><i class="sw" style="border-color:var(--rewrite);background:var(--rewrite-soft)"></i>the gateway changes the SQL</span>
+      <span><i class="sw" style="border-color:var(--plain);background:var(--plain-soft)"></i>runs as today</span>
+      <span><i class="sw" style="border-color:var(--ok);background:var(--ok-soft)"></i>shown</span>
+      <span><i class="sw" style="border-color:var(--stop);background:var(--stop-soft)"></i>rejected or hidden</span>
+    </div>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span><b>Tag the columns.</b> In <code>schema.yaml</code>, age, gender, city, state, country and traffic source get <code>aggregate_only: true</code>.</span></li>
+      <li><span><b>Listed one row per person?</b> Rejected. The AI is told to use the column only inside a total.</span></li>
+      <li><span><b>Inside a total?</b> Allowed, and the gateway adds <code>HAVING COUNT(DISTINCT user_id) &gt;= 5</code>, so BigQuery drops the small groups itself.</span></li>
+      <li><span><b>No tagged column?</b> Nothing changes. "Top customers by spend" still works through pseudonyms.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The picture: two questions per query</h2>
+    <div class="fork">
+      <div class="box is-plain"><b>The AI's SQL arrives at the gateway</b><small>after the guard and the column check</small></div>
+      <div class="arrow"></div>
+      <div class="question">Does it use a tagged column?</div>
+      <div class="branches">
+        <div class="branch">
+          <div class="label">no</div>
+          <div class="box is-plain"><b>Runs as today</b><small>e.g. revenue per brand, top customers by pseudonym</small></div>
+        </div>
+        <div class="branch">
+          <div class="label">yes</div>
+          <div class="question">Is it inside a total?</div>
+          <div class="branches" style="margin-top:4px">
+            <div class="branch">
+              <div class="label">no</div>
+              <div class="box is-stop"><b>Rejected</b><small>the AI gets the reason and rewrites it as a total</small></div>
+            </div>
+            <div class="branch">
+              <div class="label">yes</div>
+              <div class="box is-rewrite"><b>Add HAVING ≥ 5</b><small>BigQuery drops groups under 5 customers</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">🏠 Like a census office: it publishes counts per town, never a list of residents, and leaves out any town with fewer than 5 people.</p>
+  </section>
+
+  <section>
+    <h2>What "tagging" means</h2>
+    <p>A tag is one extra label next to a column in <code>schema.yaml</code>. The data doesn't change; the label tells the gateway how to treat that column, like a "fragile" sticker on a box. To protect another column, you edit the file, not the code.</p>
+    <div class="pair">
+      <div class="box">
+        <b>Today</b>
+<pre>users:
+  age:    {type: INT64}
+  city:   {type: STRING}
+  state:  {type: STRING}
+  status: …</pre>
+      </div>
+      <div class="box is-tag">
+        <b>With the tag</b>
+<pre>users:
+  age:    {type: INT64,  <span class="tagged">aggregate_only: true</span>}
+  city:   {type: STRING, <span class="tagged">aggregate_only: true</span>}
+  state:  {type: STRING, <span class="tagged">aggregate_only: true</span>}
+  status: …  <span class="c"># no tag: works as today</span></pre>
+      </div>
+    </div>
+    <p class="note">Tagged: <code>users</code> age, gender, city, state, country, traffic_source, plus <code>orders.gender</code>, which is the same fact copied onto every order.</p>
+  </section>
+
+  <section>
+    <h2>Example: "average age of Levi's buyers in each city"</h2>
+    <ol class="steps">
+      <li>The AI writes a total, which is the allowed kind:</li>
+    </ol>
+<pre>SELECT u.city, AVG(u.age) AS avg_age
+FROM users u JOIN order_items oi ON oi.user_id = u.id
+GROUP BY u.city</pre>
+    <ol class="steps" start="2">
+      <li>The gateway sees the tagged <code>city</code> and <code>age</code> inside a total, so it adds one line:</li>
+    </ol>
+<pre>SELECT u.city, AVG(u.age) AS avg_age
+FROM users u JOIN order_items oi ON oi.user_id = u.id
+GROUP BY u.city
+<span class="add">HAVING COUNT(DISTINCT u.id) &gt;= 5</span>   <span class="c"># 5 = MIN_GROUP_SIZE in .env</span></pre>
+    <ol class="steps" start="3">
+      <li>BigQuery counts the customers in each city and leaves out the small ones before sending anything back:</li>
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>city</th><th>customers</th><th>avg age</th><th>sent to the AI?</th></tr></thead>
+        <tbody>
+          <tr><td>Shanghai</td><td class="num">412</td><td class="num">38</td><td>✅ yes</td></tr>
+          <tr><td>São Paulo</td><td class="num">297</td><td class="num">35</td><td>✅ yes</td></tr>
+          <tr class="hidden"><td>Tromsø</td><td class="num">1</td><td class="num">27</td><td>❌ dropped: that's one person's age</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Numbers made up to show the idea. The customers column is shown here only to explain; the AI never sees it.</p>
+  </section>
+
+  <section>
+    <h2>Three queries, three outcomes</h2>
+    <div class="trio">
+      <div class="box is-stop">
+        <b>Listing a tagged column</b>
+<pre>SELECT id, city, age
+FROM users</pre>
+        <p>❌ Rejected. One row per person would show each customer's city and age.</p>
+      </div>
+      <div class="box is-rewrite">
+        <b>A total of a tagged column</b>
+<pre>SELECT country, SUM(…)
+… GROUP BY country</pre>
+        <p>✅ Runs with <code>HAVING ≥ 5</code> added. Countries with 1–4 customers are left out.</p>
+      </div>
+      <div class="box is-plain">
+        <b>No tagged column</b>
+<pre>SELECT user_id, SUM(…)
+… GROUP BY user_id</pre>
+        <p>✅ Unchanged. Each row is one customer, but only as a pseudonym like <code>cust_72ac84091163</code>.</p>
+      </div>
+    </div>
+    <p class="note"><code>ARRAY_AGG</code> and <code>STRING_AGG</code> are rejected in these totals: they return one row per group, but it still holds every customer's value. Why <code>HAVING</code> and not dropping rows in Python afterwards: SQL applies <code>HAVING</code> before <code>LIMIT</code>, so "top 3 countries" still returns 3 safe rows instead of 3 rows minus the hidden ones.</p>
+  </section>
+
+  <section>
+    <h2>What it doesn't stop</h2>
+    <div class="box is-stop">
+      <b>Subtracting two totals</b>
+      <p>"Total spend, all countries" minus "total spend, all countries except Iceland" gives Iceland's one customer. Each query passes on its own. Real protection needs added noise (differential privacy), which is beyond this prototype, so the design doc names it as a known limit.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>A tagged column can reach the AI only inside a total, and only when that total covers at least 5 customers, counted and enforced by BigQuery itself.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Ticket: <code>tasks/10-demographics-only-in-totals-of-5.md</code>. Plan: step 3 in <code>docs/plan.md</code>. Tests: <code>tests/test_step2_small_groups.py</code>.</div>
+    <div>Code: <code>query_safety/step2_personal_data/small_groups.py</code> (<code>SmallGroups.apply</code>), called from <code>QueryGateway.run</code> after the column check and before pseudonyms. Tag read in <code>schema.py</code> (<code>Column.aggregate_only</code>) from <code>schema.yaml</code>. Setting: <code>MIN_GROUP_SIZE</code> (default 5), written into the SQL as a plain number: it isn't secret, and the log shows exactly what ran.</div>
+    <div>Each SELECT is checked on its own: a total inside a <code>WITH</code> step gets the <code>HAVING</code> on that step; a step that only passes <code>city</code> along is rejected. The id counted is the one of the table the tagged column comes from (<code>users.id</code>, <code>orders.user_id</code>).</div>
+    <div>See also <a href="sql-journey.html">one query's full journey</a>, <a href="sql-parser-rules.html">SQL parser rules</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>

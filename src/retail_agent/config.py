@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # The secret behind customer pseudonyms (cust_72ac84091163). Unset or empty: a random one per run, so
     # pseudonyms stay the same within a run but change between runs.
     pseudonym_salt: SecretStr = Field(default_factory=_random_salt)
+    # Totals of age, city and other aggregate_only columns over fewer customers than this are hidden.
+    min_group_size: int = Field(default=5, ge=1)
 
     @field_validator("pseudonym_salt")
     @classmethod
