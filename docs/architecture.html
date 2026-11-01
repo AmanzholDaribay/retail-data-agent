@@ -135,7 +135,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
 
 <main>
   <header style="display:grid;gap:12px">
-    <div class="eyebrow">retail-data-agent · steps 1–2 done, steps 3 and 5 in progress · as of 2026-11-01 (small groups hidden, reports saved and listed)</div>
+    <div class="eyebrow">retail-data-agent · steps 1–2 and 5 done, step 3 almost · as of 2026-11-01 (reports saved, listed and deleted)</div>
     <h1>Retail Data Agent Map</h1>
     <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>, <a href="brand-scoping.html">how each user sees only their brands</a>, and <a href="sql-parser-rules.html">how the parser rules stop a bad query</a>.</p>
     <div class="legend" aria-label="Color legend">
@@ -157,7 +157,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>app.ask(question)</span></div>
       <div class="spacer"></div>
 
-      <div class="station llm col-main"><span class="file">app.py → App.ask</span><p>Sends the question to the agent and collects the answer plus every SQL statement run during the turn. Keeps the conversation under one thread id, so follow-up questions see the earlier turns.</p></div>
+      <div class="station llm col-main"><span class="file">app.py → App.ask, App.confirm</span><p>Sends the question to the agent and collects the answer plus every SQL statement run during the turn. Keeps the conversation under one thread id, so follow-up questions see the earlier turns. When a tool pauses the turn (a delete waiting for a yes), it returns the confirmation text instead, and <code>App.confirm</code> resumes the turn with what the user typed.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>invoke</span></div>
@@ -181,7 +181,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>tool call: run_sql(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">tools.py → run_sql, save_report, list_reports</span><p><code>run_sql</code> hands the SQL to the gateway and turns the result into a compact text table for the LLM (<code>result_format.py</code>), with a note when rows were cut off or none matched. A rejected query comes back as <code>Error: …</code>. <code>save_report</code> (step 5) saves a finished report to <code>reports.py</code>'s SQLite file, with the owner, conversation, question and SQL filled in by the code, and its result is the final answer. <code>list_reports</code> lists the asking user's own reports, optionally those mentioning some text or made in this conversation.</p></div>
+      <div class="station data col-main"><span class="file">tools.py → run_sql, save_report, list_reports, delete_reports</span><p><code>run_sql</code> hands the SQL to the gateway and turns the result into a compact text table for the LLM (<code>result_format.py</code>), with a note when rows were cut off or none matched. A rejected query comes back as <code>Error: …</code>. <code>save_report</code> (step 5) saves a finished report to <code>reports.py</code>'s SQLite file, with the owner, conversation, question and SQL filled in by the code, and its result is the final answer. <code>list_reports</code> lists the asking user's own reports, optionally those mentioning some text or made in this conversation.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>gateway.run(sql)</span></div>
@@ -242,12 +242,12 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
         <thead><tr><th>File</th><th>Why it exists</th><th>Grows in</th></tr></thead>
         <tbody>
           <tr class="group"><td colspan="3">Application code · src/retail_agent/</td></tr>
-          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL and ANSWER blocks, turns failures into plain messages. <code>--user</code> picks who is asking.</td><td class="grows">–</td></tr>
-          <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL, CONFIRM and ANSWER blocks, turns failures into plain messages. <code>--user</code> picks who is asking. A CONFIRM block waits for a typed answer; Ctrl-D counts as no.</td><td class="grows">–</td></tr>
+          <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL, or a confirmation to show; <code>App.confirm</code> resumes a paused turn. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
           <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Loop rules attach here as middleware: <code>CallBudget</code> limits a question to 5 LLM calls and makes the last one answer.</td><td class="grows">step 5</td></tr>
           <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
-          <tr class="data"><td class="path">tools.py</td><td>The tools the LLM calls: <code>run_sql</code> (rejected queries come back as <code>Error: …</code>) <code>save_report</code>, which saves a report and ends the turn with it, so saving costs no extra LLM call; and <code>list_reports</code>, whose list is the answer too.</td><td class="grows">step 5 (delete)</td></tr>
-          <tr class="data"><td class="path">reports.py</td><td>The report store: a SQLite file at <code>REPORTS_PATH</code> (default <code>data/reports.sqlite3</code>), created on the first save. Each row has the owner, conversation id, time, question, the SQL behind the numbers and the report text. <code>find</code> reads them back, always filtered on the owner in the SQL, by text (case-insensitive contains) or conversation.</td><td class="grows">step 5 (delete)</td></tr>
+          <tr class="data"><td class="path">tools.py</td><td>The tools the LLM calls: <code>run_sql</code> (rejected queries come back as <code>Error: …</code>) <code>save_report</code>, which saves a report and ends the turn with it, so saving costs no extra LLM call; <code>list_reports</code>, whose list is the answer too; and <code>delete_reports</code>, which shows the exact list, pauses the turn, and deletes those reports only after a typed <code>yes</code>.</td><td class="grows">–</td></tr>
+          <tr class="data"><td class="path">reports.py</td><td>The report store: a SQLite file at <code>REPORTS_PATH</code> (default <code>data/reports.sqlite3</code>), created on the first save. Each row has the owner, conversation id, time, question, the SQL behind the numbers and the report text. <code>find</code> reads them back, always filtered on the owner in the SQL, by text (case-insensitive contains) or conversation. <code>delete</code> removes the ids a <code>find</code> returned, also filtered on the owner.</td><td class="grows">–</td></tr>
           <tr class="data"><td class="path">result_format.py</td><td>How results are shown to the LLM: a compact table, plain dates and numbers, a note when rows were cut off, and "no rows" said in words.</td><td class="grows">–</td></tr>
           <tr class="data"><td class="path">query_safety/gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the personal-data check, the small-groups check, the customer pseudonyms, the brand scope, the byte limit, the row cap.</td><td class="grows">step 3</td></tr>
           <tr class="data"><td class="path">query_safety/step1_guard.py</td><td>Parses each query with sqlglot before it runs: exactly one SELECT, no query parameters or system variables, reading only the allowed tables, no table functions. Fails closed if it can't parse.</td><td class="grows">step 3</td></tr>
@@ -276,7 +276,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
 
           <tr class="group"><td colspan="3">Tests · run offline, no keys needed</td></tr>
           <tr class="ui"><td class="path">tests/fakes.py</td><td>A scripted fake LLM that records what it was sent, and a fake database with canned rows and byte estimates.</td><td class="grows">each step</td></tr>
-          <tr class="ui"><td class="path">tests/test_reports.py</td><td>A report turn (two parallel queries, then <code>save_report</code>) saves one row with the right owner, conversation, question and SQL in 2 LLM calls; a rejected query is left out; a normal question saves nothing. Listing never shows another user's reports, searches title, question and text ignoring case, and answers in 1 LLM call.</td><td class="grows">step 5</td></tr>
+          <tr class="ui"><td class="path">tests/test_reports.py</td><td>A report turn (two parallel queries, then <code>save_report</code>) saves one row with the right owner, conversation, question and SQL in 2 LLM calls; a rejected query is left out; a normal question saves nothing. Listing never shows another user's reports, searches title, question and text ignoring case, and answers in 1 LLM call. Deleting shows the exact list, deletes only after <code>yes</code> (anything else cancels), never touches another user's reports, deletes only the ids that were shown, and confirms two deletes one at a time.</td><td class="grows">step 5</td></tr>
           <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives full questions through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures, call budget, follow-ups.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/harness.py</td><td>Shared helpers: builds an app from the fakes and reads what the model saw from a tool.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/test_step1_guard.py</td><td>Each guard rule and the byte limit, through the whole app: rejected queries never reach the database.</td><td class="grows">step 3</td></tr>
@@ -305,7 +305,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
     <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
     <div class="seams">
       <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Done in step 3: every query limited to the user's brands</li><li>Done in step 3: only <code>schema.yaml</code> columns, no <code>*</code>, so no personal data</li><li>Done in step 3: customer ids only as salted-hash pseudonyms, for every user</li><li>Done in step 3: demographics only in totals, groups under 5 customers hidden</li><li>Step 3 next: a safety-net check on returned rows</li></ul></div>
-      <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers (and says a report can't be saved then)</li><li>Step 5 next: confirm before deleting reports</li></ul></div>
+      <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers (and says a report can't be saved then)</li><li>Done in step 5: a delete pauses the turn (LangGraph <code>interrupt</code>) until the user types yes</li></ul></div>
       <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
       <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove personal columns never reach the database or the LLM</li></ul></div>
     </div>
