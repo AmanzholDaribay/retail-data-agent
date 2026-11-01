@@ -216,7 +216,7 @@ WHERE order_id IN (
         <p>Reject any query that uses <code>num_of_item</code>. But <code>SELECT *</code> uses it without naming it, so we'd have to track columns through every query, which is harder to get right and loses a useful number.</p>
       </div>
     </div>
-    <p class="note">Since ticket 08, the AI's <code>SELECT *</code> is rejected and every column is traced by <code>pii.py</code>, so blocking the column would now be easy. The recount stays because the number is still useful. See <a href="sql-parser-rules.html">the parser rules</a>.</p>
+    <p class="note">Since ticket 08, the AI's <code>SELECT *</code> is rejected and every column is traced by <code>query_safety/step2_personal_data.py</code>, so blocking the column would now be easy. The recount stays because the number is still useful. See <a href="sql-parser-rules.html">the parser rules</a>.</p>
     <p class="note">The other <code>orders</code> columns (status and dates) describe the order itself, not other brands' items, so they need no change.</p>
   </section>
 
@@ -228,8 +228,8 @@ WHERE order_id IN (
   </section>
 
   <footer>
-    <div>Code: <code>orders_columns_with_scoped_item_count</code> in <code>src/retail_agent/order_item_count.py</code> builds the <code>SELECT * REPLACE (…)</code> list. <code>BrandScope</code> in <code>src/retail_agent/brand_scope.py</code> uses it for the filtered <code>orders</code> table (<code>_COLUMNS</code>), next to the row filter in <code>_FILTERS</code>. The CEO's queries aren't rewritten, so they keep the real count.</div>
-    <div>Tests: <code>tests/test_order_item_count.py</code>, and the exact rewritten SQL in <code>tests/test_brand_scope.py</code>.</div>
+    <div>Code: <code>orders_columns_with_scoped_item_count</code> in <code>src/retail_agent/query_safety/step3_order_item_count.py</code> builds the <code>SELECT * REPLACE (…)</code> list. <code>BrandScope</code> in <code>src/retail_agent/query_safety/step3_brand_scope.py</code> uses it for the filtered <code>orders</code> table (<code>_COLUMNS</code>), next to the row filter in <code>_FILTERS</code>. The CEO's queries aren't rewritten, so they keep the real count.</div>
+    <div>Tests: <code>tests/test_step3_order_item_count.py</code>, and the exact rewritten SQL in <code>tests/test_step3_brand_scope.py</code>.</div>
     <div>See also <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>.</div>
   </footer>
 

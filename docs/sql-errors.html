@@ -216,8 +216,8 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
   </section>
 
   <footer>
-    <div>For engineers: the list is <code>_INFRASTRUCTURE_REASONS</code> in <code>src/retail_agent/db/bigquery.py</code>; errors without a reason code are decided by HTTP status (5xx, 401, 403 and 429 stop; others go to the AI). Gateway rejections are <code>QueryRejected</code> (a <code>QueryError</code>) from <code>guard.py</code> and <code>gateway.py</code>. The 5-call cap is <code>CallBudget</code> in <code>src/retail_agent/agent.py</code>, set by <code>MAX_LLM_CALLS</code>.</div>
-    <div>Tests: <code>tests/test_bigquery_errors.py</code>, <code>tests/test_query_guard.py</code> and <code>tests/test_turn.py</code>. Ticket: <code>tasks/03-recover-from-bad-sql.md</code>.</div>
+    <div>For engineers: the list is <code>_INFRASTRUCTURE_REASONS</code> in <code>src/retail_agent/db/bigquery.py</code>; errors without a reason code are decided by HTTP status (5xx, 401, 403 and 429 stop; others go to the AI). Gateway rejections are <code>QueryRejected</code> (a <code>QueryError</code>) from <code>query_safety/step1_guard.py</code> and <code>query_safety/gateway.py</code>. The 5-call cap is <code>CallBudget</code> in <code>src/retail_agent/agent.py</code>, set by <code>MAX_LLM_CALLS</code>.</div>
+    <div>Tests: <code>tests/test_bigquery_errors.py</code>, <code>tests/test_step1_guard.py</code> and <code>tests/test_turn.py</code>. Ticket: <code>tasks/03-recover-from-bad-sql.md</code>.</div>
   </footer>
 
 </main>
