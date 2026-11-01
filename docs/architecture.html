@@ -135,9 +135,9 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
 
 <main>
   <header style="display:grid;gap:12px">
-    <div class="eyebrow">retail-data-agent · steps 1–2, step 3 in progress · as of 2026-10-31</div>
+    <div class="eyebrow">retail-data-agent · steps 1–2, step 3 in progress · as of 2026-10-31 (PII columns blocked)</div>
     <h1>Retail Data Agent Map</h1>
-    <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a> and <a href="brand-scoping.html">how each user sees only their brands</a>.</p>
+    <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>, <a href="brand-scoping.html">how each user sees only their brands</a>, and <a href="sql-parser-rules.html">how the parser rules stop a bad query</a>.</p>
     <div class="legend" aria-label="Color legend">
       <span><i class="swatch" style="border-color:var(--ui);background:var(--ui-soft)"></i>What you see</span>
       <span><i class="swatch" style="border-color:var(--llm);background:var(--llm-soft)"></i>Agent and LLM</span>
@@ -187,7 +187,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>gateway.run(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, runs the guard (<code>guard.py</code>: one SELECT, only the 4 tables), limits the query to the user's brands (<code>brand_scope.py</code>), rejects a query whose dry-run estimate is over the byte limit, caps rows. Later in step 3: masks PII. See <a href="brand-scoping.html">brand scoping</a>.</p></div>
+      <div class="station data col-main"><span class="file">gateway.py → QueryGateway</span><p>The only path to the data. Logs the SQL, runs the guard (<code>guard.py</code>: one SELECT, only the 4 tables), lets the query read only the columns in <code>schema.yaml</code> so no personal data gets out (<code>pii.py</code>), limits it to the user's brands (<code>brand_scope.py</code>), rejects a query whose dry-run estimate is over the byte limit, caps rows. See <a href="sql-parser-rules.html">the parser rules</a> and <a href="brand-scoping.html">brand scoping</a>.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>database.execute(sql, max_rows)</span></div>
@@ -248,9 +248,10 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
           <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls. Rejected queries come back to the model as <code>Error: …</code>.</td><td class="grows">step 5</td></tr>
           <tr class="data"><td class="path">result_format.py</td><td>How results are shown to the LLM: a compact table, plain dates and numbers, a note when rows were cut off, and "no rows" said in words.</td><td class="grows">–</td></tr>
-          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the brand scope, the byte limit, the row cap.</td><td class="grows">step 3 (PII)</td></tr>
+          <tr class="data"><td class="path">gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the personal-data check, the brand scope, the byte limit, the row cap.</td><td class="grows">step 3</td></tr>
           <tr class="data"><td class="path">brand_scope.py</td><td>Rewrites each query so every table it reads holds only the user's brands. The CEO's queries pass unchanged.</td><td class="grows">–</td></tr>
-          <tr class="data"><td class="path">order_item_count.py</td><td>For a brand manager, recounts <code>orders.num_of_item</code> from their own items, so it no longer counts other brands\' items.</td><td class="grows">–</td></tr>
+          <tr class="data"><td class="path">order_item_count.py</td><td>For a brand manager, recounts <code>orders.num_of_item</code> from their own items, so it no longer counts other brands' items.</td><td class="grows">–</td></tr>
+          <tr class="data"><td class="path">pii.py</td><td>Lets a query read only the columns listed in <code>schema.yaml</code>, traced through aliases, joins and subqueries with sqlglot. Also rejects <code>*</code> (except <code>COUNT(*)</code>) and whole rows used as values. Names, emails and addresses aren't listed, so they can't be read.</td><td class="grows">step 3 (pseudonyms, aggregate-only demographics)</td></tr>
           <tr class="data"><td class="path">guard.py</td><td>Parses each query with sqlglot before it runs: exactly one SELECT, reading only the allowed tables, no table functions. Fails closed if it can't parse.</td><td class="grows">step 3</td></tr>
           <tr class="data"><td class="path">db/base.py</td><td>The <code>Database</code> protocol (<code>execute</code>, <code>estimate_bytes</code>), <code>QueryResult</code> and <code>QueryError</code>. What any database must offer to plug in.</td><td class="grows">ticket 05</td></tr>
           <tr class="data"><td class="path">db/bigquery.py</td><td>The BigQuery implementation: billing project, byte cap, dry-run byte estimate, rows and bytes processed. Sorts errors into query problems (back to the model) and infrastructure ones.</td><td class="grows">ticket 05</td></tr>
@@ -261,7 +262,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="cfg"><td class="path">__init__.py, db/__init__.py</td><td>Mark the folders as Python packages.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Data and prompt · edited without touching code</td></tr>
-          <tr class="cfg"><td class="path">schema.yaml</td><td>What the agent knows about the data: tables, columns, types, notes such as the revenue definition.</td><td class="grows">step 3 (PII tags)</td></tr>
+          <tr class="cfg"><td class="path">schema.yaml</td><td>What the agent knows about the data: tables, columns, types, notes such as the revenue definition. Also the column allow-list: a column not listed here can't be queried.</td><td class="grows">–</td></tr>
           <tr class="cfg"><td class="path">users.yaml</td><td>Who can use the agent and which brands each one sees; <code>all</code> for the CEO.</td><td class="grows">as users are added</td></tr>
           <tr class="cfg"><td class="path">prompts/system.md</td><td>The agent's instructions, as a template. Persona and tone change here.</td><td class="grows">as needed</td></tr>
 
@@ -275,6 +276,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives full questions through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures, call budget, follow-ups.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/harness.py</td><td>Shared helpers: builds an app from the fakes and reads what the model saw from a tool.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/test_query_guard.py</td><td>Each guard rule and the byte limit, through the whole app: rejected queries never reach the database.</td><td class="grows">step 3</td></tr>
+          <tr class="ui"><td class="path">tests/test_pii.py</td><td>Personal columns, <code>*</code> and whole rows are rejected before the database; schema columns, joins and <code>COUNT(*)</code> still run.</td><td class="grows">step 3</td></tr>
           <tr class="ui"><td class="path">tests/test_brand_scope.py</td><td>Tricky queries can't read a table outside the brand filter; the CEO's SQL is unchanged; the gateway runs the scoped SQL.</td><td class="grows">step 3</td></tr>
           <tr class="ui"><td class="path">tests/test_order_item_count.py</td><td>A brand manager's orders recount <code>num_of_item</code> from their own items.</td><td class="grows">–</td></tr>
           <tr class="ui"><td class="path">tests/test_users.py</td><td>Loading <code>users.yaml</code>: brand lists, <code>all</code>, unknown users and broken entries.</td><td class="grows">–</td></tr>
@@ -296,10 +298,10 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
     <h2 id="seam-h">Where later steps plug in</h2>
     <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
     <div class="seams">
-      <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Done in step 3: every query limited to the user's brands</li><li>Step 3 next: PII blocking, groups under 5 hidden</li></ul></div>
+      <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Done in step 3: every query limited to the user's brands</li><li>Done in step 3: only <code>schema.yaml</code> columns, no <code>*</code>, so no personal data</li><li>Step 3 next: pseudonymous <code>user_id</code>, demographics only in totals, groups under 5 hidden</li></ul></div>
       <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers</li><li>Step 5: confirm before deleting reports</li></ul></div>
       <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
-      <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove no PII reaches the LLM</li></ul></div>
+      <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove personal columns never reach the database or the LLM</li></ul></div>
     </div>
   </section>
 </main>

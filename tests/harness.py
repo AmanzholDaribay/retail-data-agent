@@ -12,6 +12,8 @@ from retail_agent.users import User
 ROOT = Path(__file__).parents[1]
 ORDER_ITEMS = "`bigquery-public-data.thelook_ecommerce.order_items`"
 PRODUCTS = "`bigquery-public-data.thelook_ecommerce.products`"
+ORDERS = "`bigquery-public-data.thelook_ecommerce.orders`"
+USERS = "`bigquery-public-data.thelook_ecommerce.users`"
 CEO = User(name="ceo", brands=None)
 
 

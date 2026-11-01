@@ -185,7 +185,7 @@ footer { color: var(--muted); font-size: 0.85rem; display: grid; gap: 4px; borde
     <div class="pipe">
       <div class="station ai"><div class="tag">1 · The AI writes SQL</div><p>Plain SQL over the four real tables. It doesn't need to filter by brand, and no filter it writes can widen what it sees.</p></div>
       <div class="arrow"></div>
-      <div class="station plain"><div class="tag">2 · Guard</div><p>One SELECT, only the four allowed tables, nothing it can't parse.</p><div class="side-exit">✕ anything else is stopped here</div></div>
+      <div class="station plain"><div class="tag">2 · Guard and personal-data check</div><p>One SELECT, only the four allowed tables, only the columns in <code>schema.yaml</code>, no <code>*</code>, nothing it can't parse. See <a href="sql-parser-rules.html">the parser rules</a>.</p><div class="side-exit">✕ anything else is stopped here</div></div>
       <div class="arrow"></div>
       <div class="station scope"><div class="tag">3 · Brand scope (new)</div><p>Swaps each table for its brand-filtered version. The CEO's SQL passes unchanged.</p></div>
       <div class="arrow"></div>
@@ -284,7 +284,7 @@ GROUP BY brand</pre>
       <table>
         <thead><tr><th>The AI writes…</th><th>What happens</th><th></th></tr></thead>
         <tbody>
-          <tr><td><code>SELECT * FROM products</code>, no filter</td><td>Reads the filtered table, so only the user's brands come back.</td><td class="ok">covered</td></tr>
+          <tr><td><code>SELECT brand, name FROM products</code>, no filter</td><td>Reads the filtered table, so only the user's brands come back. (A <code>SELECT *</code> is stopped earlier by the personal-data check; only our own filtered tables use <code>*</code>.)</td><td class="ok">covered</td></tr>
           <tr><td><code>WHERE brand = 'Nike'</code> on another brand</td><td>Filters an already-filtered table, so it returns nothing.</td><td class="ok">covered</td></tr>
           <tr><td>Its own <code>WITH products AS (…)</code></td><td>Its WITH reads our filtered table, because ours come first.</td><td class="ok">covered</td></tr>
           <tr><td>Subqueries, <code>UNION</code>s, a table used twice</td><td>Every table reference in the parsed query is swapped.</td><td class="ok">covered</td></tr>
@@ -304,9 +304,9 @@ GROUP BY brand</pre>
   </section>
 
   <footer>
-    <div>Code: <code>BrandScope.apply</code> in <code>src/retail_agent/brand_scope.py</code> (the four filters are in <code>_FILTERS</code>), called by <code>QueryGateway.run</code> in <code>src/retail_agent/gateway.py</code> after <code>QueryGuard.check</code> and before the byte check. Built in <code>assemble</code> in <code>src/retail_agent/app.py</code> from <code>schema.dataset</code> and <code>user.brands</code>. The user comes from <code>load_user</code> in <code>src/retail_agent/users.py</code>, reading <code>users.yaml</code> (<code>USERS_PATH</code>). The filtered SQL is logged as <code>Scoped SQL:</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Code: <code>BrandScope.apply</code> in <code>src/retail_agent/brand_scope.py</code> (the four filters are in <code>_FILTERS</code>), called by <code>QueryGateway.run</code> in <code>src/retail_agent/gateway.py</code> after <code>QueryGuard.check</code> and <code>PersonalDataCheck.check</code> (<code>pii.py</code>), and before the byte check. Built in <code>assemble</code> in <code>src/retail_agent/app.py</code> from <code>schema.dataset</code> and <code>user.brands</code>. The user comes from <code>load_user</code> in <code>src/retail_agent/users.py</code>, reading <code>users.yaml</code> (<code>USERS_PATH</code>). The filtered SQL is logged as <code>Scoped SQL:</code> in <code>logs/retail-agent.log</code>.</div>
     <div>Tests: <code>tests/test_brand_scope.py</code> (the tricky queries above, the CEO, the gateway end to end) and <code>tests/test_users.py</code>.</div>
-    <div>Plan: step 3 in <code>docs/plan.md</code>. See also <a href="order-item-count.html">why num_of_item is recounted</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
+    <div>Plan: step 3 in <code>docs/plan.md</code>. See also <a href="sql-parser-rules.html">every rule that uses the parse tree</a>, <a href="order-item-count.html">why num_of_item is recounted</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
   </footer>
 
 </main>

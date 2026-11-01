@@ -201,7 +201,7 @@ FROM `…orders` AS orders
 <span class="c">-- only orders with at least one of the user's items</span>
 WHERE order_id IN (
   SELECT order_id FROM _brand_scoped_order_items)</pre>
-    <p>The AI's SQL doesn't change. Whether it writes <code>SELECT *</code>, <code>SUM(num_of_item)</code> or <code>AVG(num_of_item)</code>, it gets the recounted number. The column's note in <code>schema.yaml</code> tells the AI what the number means for a brand manager.</p>
+    <p>The AI's SQL doesn't change. Whether it writes <code>num_of_item</code>, <code>SUM(num_of_item)</code> or <code>AVG(num_of_item)</code>, it gets the recounted number. The column's note in <code>schema.yaml</code> tells the AI what the number means for a brand manager.</p>
   </section>
 
   <section aria-label="The option we dropped">
@@ -209,13 +209,14 @@ WHERE order_id IN (
     <div class="options">
       <div class="option chosen">
         <div class="tag">Recount · chosen</div>
-        <p>The number stays useful ("how many of my items per order") and every query shape is covered, including <code>SELECT *</code>.</p>
+        <p>The number stays useful ("how many of my items per order") and every query shape is covered.</p>
       </div>
       <div class="option">
         <div class="tag">Block the column · dropped</div>
         <p>Reject any query that uses <code>num_of_item</code>. But <code>SELECT *</code> uses it without naming it, so we'd have to track columns through every query, which is harder to get right and loses a useful number.</p>
       </div>
     </div>
+    <p class="note">Since ticket 08, the AI's <code>SELECT *</code> is rejected and every column is traced by <code>pii.py</code>, so blocking the column would now be easy. The recount stays because the number is still useful. See <a href="sql-parser-rules.html">the parser rules</a>.</p>
     <p class="note">The other <code>orders</code> columns (status and dates) describe the order itself, not other brands' items, so they need no change.</p>
   </section>
 

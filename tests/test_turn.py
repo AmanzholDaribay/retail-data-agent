@@ -12,7 +12,7 @@ from retail_agent.db.base import QueryError, QueryResult
 
 
 def test_answers_a_question_with_the_sql_it_ran():
-    sql = f"SELECT brand, SUM(sale_price) AS revenue FROM {ORDER_ITEMS} GROUP BY brand"
+    sql = f"SELECT p.brand, SUM(oi.sale_price) AS revenue FROM {ORDER_ITEMS} oi JOIN {PRODUCTS} p ON p.id = oi.product_id GROUP BY p.brand"
     model = ScriptedChatModel(script=[run_sql_call(sql), AIMessage("Brand A leads with $100.")])
     database = FakeDatabase([QueryResult(columns=["brand", "revenue"], rows=[("Brand A", 100.0)])])
 
@@ -87,14 +87,14 @@ def test_dates_decimals_and_nulls_reach_the_model_as_plain_text():
 
 
 def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
-    bad_sql = f"SELECT revenue FROM {ORDER_ITEMS}"
+    bad_sql = f"SELECT SUM(sale_price) AS revenue FROM {ORDER_ITEMS} WHERE created_at > '2026-13-01'"
     good_sql = f"SELECT SUM(sale_price) AS revenue FROM {ORDER_ITEMS}"
     model = ScriptedChatModel(
         script=[run_sql_call(bad_sql), run_sql_call(good_sql), AIMessage("Revenue is $100.")]
     )
     database = FakeDatabase(
         [
-            QueryError("Unrecognized name: revenue at [1:8]"),
+            QueryError("Invalid timestamp: '2026-13-01'"),
             QueryResult(columns=["revenue"], rows=[(100.0,)]),
         ]
     )
@@ -103,7 +103,7 @@ def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
 
     error_seen_by_model = model.received[1][-1]
     assert isinstance(error_seen_by_model, ToolMessage)
-    assert error_seen_by_model.text == "Error: Unrecognized name: revenue at [1:8]"
+    assert error_seen_by_model.text == "Error: Invalid timestamp: '2026-13-01'"
     assert result.answer == "Revenue is $100."
     assert result.sql == [bad_sql, good_sql]
     assert database.executed == [bad_sql, good_sql]
@@ -150,7 +150,7 @@ def test_a_model_that_calls_a_tool_on_its_last_call_ends_at_the_call_budget():
 
 
 def test_a_follow_up_question_sees_the_earlier_turn():
-    sql = f"SELECT brand, SUM(sale_price) AS revenue FROM {ORDER_ITEMS} GROUP BY brand"
+    sql = f"SELECT p.brand, SUM(oi.sale_price) AS revenue FROM {ORDER_ITEMS} oi JOIN {PRODUCTS} p ON p.id = oi.product_id GROUP BY p.brand"
     model = ScriptedChatModel(
         script=[run_sql_call(sql), AIMessage("Brand A leads with $100."), AIMessage("The month before, Brand B led.")]
     )

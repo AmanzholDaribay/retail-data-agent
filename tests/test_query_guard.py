@@ -88,7 +88,7 @@ def test_a_table_function_is_rejected():
 def test_a_query_that_would_scan_more_than_the_byte_limit_is_rejected_before_it_runs():
     database = FakeDatabase([], estimated_bytes=2_500_000_000)
 
-    output = model_output_for(f"SELECT * FROM {ORDER_ITEMS}", database)
+    output = model_output_for(f"SELECT sale_price FROM {ORDER_ITEMS}", database)
 
     assert output == (
         "Error: This query would scan 2.5 GB, over the 1.0 GB limit per query. "
@@ -107,7 +107,7 @@ def test_a_rejected_query_is_logged(caplog):
 def test_the_byte_limit_message_uses_a_unit_that_fits_the_sizes():
     database = FakeDatabase([], estimated_bytes=31_500_000)
 
-    output = model_output_for(f"SELECT * FROM {ORDER_ITEMS}", database, max_bytes_billed=5_000_000)
+    output = model_output_for(f"SELECT sale_price FROM {ORDER_ITEMS}", database, max_bytes_billed=5_000_000)
 
     assert output.startswith("Error: This query would scan 31.5 MB, over the 5.0 MB limit")
 

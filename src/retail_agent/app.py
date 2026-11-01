@@ -15,6 +15,7 @@ from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
 from retail_agent.gateway import QueryGateway
 from retail_agent.guard import QueryGuard
+from retail_agent.pii import PersonalDataCheck
 from retail_agent.llm import build_model
 from retail_agent.observability import LlmCallLogger
 from retail_agent.schema import Schema, load_schema
@@ -119,8 +120,9 @@ def assemble(
 ) -> App:
     """Wire the app from its parts. Tests call this directly with fakes."""
     guard = QueryGuard(database.dialect, allowed_tables=[schema.qualified_name(table) for table in schema.tables])
+    personal_data = PersonalDataCheck(database.dialect, schema)
     scope = BrandScope(database.dialect, schema.dataset, user.brands)
-    gateway = QueryGateway(database, guard, settings.max_rows, settings.max_bytes_billed, scope)
+    gateway = QueryGateway(database, guard, personal_data, settings.max_rows, settings.max_bytes_billed, scope)
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQL Parser Rules</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; text → tree picture, then the checks one by one on SELECT *, then every rule in a table. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --ai: #a35a12;    --ai-soft: #f8ecdf;    /* amber: the SQL text the AI wrote */
+  --tree: #2b5d8a;  --tree-soft: #e2edf6;  /* blue: the parse tree and its nodes */
+  --ok: #2c6b3f;    --ok-soft: #e4f1e7;    /* green: check passed */
+  --bad: #a3352b;   --bad-soft: #f8e5e2;   /* red: check stopped the query */
+  --ours: #5b4f8a;  --ours-soft: #ece9f5;  /* violet: SQL our code rewrites */
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --ai: #e7a464; --ai-soft: #3a2a1a; --tree: #82b6e3; --tree-soft: #18293a;
+    --ok: #7fcf96; --ok-soft: #1b3324; --bad: #f08a7e; --bad-soft: #3a1d1a;
+    --ours: #b3a8e6; --ours-soft: #28243d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --ai: #e7a464; --ai-soft: #3a2a1a; --tree: #82b6e3; --tree-soft: #18293a;
+  --ok: #7fcf96; --ok-soft: #1b3324; --bad: #f08a7e; --bad-soft: #3a1d1a;
+  --ours: #b3a8e6; --ours-soft: #28243d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--tree); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; counter-increment: s; }
+.short li::before {
+  content: counter(s); width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font: 600 0.8rem/1 var(--font-mono);
+}
+
+.box {
+  border: 1.5px solid var(--k, var(--line)); background: var(--k-soft, var(--surface));
+  border-radius: 10px; padding: 12px 16px; display: grid; gap: 4px; min-width: 0;
+}
+.box small { color: var(--muted); font-size: 0.85rem; }
+.is-ai { --k: var(--ai); --k-soft: var(--ai-soft); }
+.is-tree { --k: var(--tree); --k-soft: var(--tree-soft); }
+.is-ok { --k: var(--ok); --k-soft: var(--ok-soft); }
+.is-bad { --k: var(--bad); --k-soft: var(--bad-soft); }
+.is-ours { --k: var(--ours); --k-soft: var(--ours-soft); }
+.box.skipped { opacity: 0.45; border-style: dashed; }
+
+/* text → tree */
+.parse { display: grid; grid-template-columns: 1fr auto 1.4fr; gap: 16px; align-items: center; }
+.parse .mid { color: var(--muted); font: 0.8rem/1.3 var(--font-mono); text-align: center; }
+.sqltext { font: 500 1rem/1.4 var(--font-mono); word-break: break-word; }
+
+/* checks */
+.flow { display: grid; gap: 0; justify-items: center; }
+.flow .box { width: min(640px, 100%); }
+.step { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start; }
+.step .q { font-weight: 600; }
+.step .verdict { font: 600 0.8rem/1.4 var(--font-mono); white-space: nowrap; }
+.step .where { grid-column: 1 / -1; font: 0.78rem/1.4 var(--font-mono); color: var(--muted); }
+.step .why { grid-column: 1 / -1; font-size: 0.88rem; }
+.arrow { display: grid; justify-items: center; color: var(--muted); font: 0.75rem/1.2 var(--font-mono); padding: 3px 0; }
+.arrow::before { content: ""; width: 0; height: 14px; border-left: 1.5px solid var(--line); }
+.arrow::after { content: "▼"; font-size: 0.65rem; color: var(--line); }
+.arrow.stop::before { border-left-style: dashed; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.pair ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+
+.rule { border-left: 4px solid var(--fg); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; display: grid; gap: 6px; }
+
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+tr.group td { font: 600 0.8rem/1.3 var(--font-mono); background: var(--k-soft); color: var(--k); border-bottom: 1.5px solid var(--k); }
+td.sql { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ai); min-width: 190px; }
+td.msg { font-size: 0.82rem; color: var(--muted); min-width: 220px; }
+td.n { font: 600 0.8rem/1.6 var(--font-mono); color: var(--muted); }
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--line); overflow-x: auto; font: 0.8rem/1.6 var(--font-mono); }
+pre .c { color: var(--muted); }
+pre .hit { color: var(--bad); font-weight: 600; }
+
+svg { width: 100%; height: auto; display: block; }
+svg text { fill: var(--fg); font-family: var(--font-body); font-size: 13px; }
+svg .mono { font-family: var(--font-mono); }
+svg .sub { fill: var(--muted); font-size: 11px; }
+svg .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+svg .lbl { fill: var(--muted); font-size: 10.5px; font-family: var(--font-mono); }
+.treecard { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; display: grid; gap: 8px; min-width: 0; }
+.treecard h3 { font-family: var(--font-mono); font-size: 0.88rem; font-weight: 500; color: var(--ai); }
+
+footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .pair, .parse { grid-template-columns: 1fr; }
+  .parse .mid { transform: rotate(90deg); }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">Retail data agent · Query gateway · as of 2026-10-31</div>
+    <h1>How does the parser turn SQL into a tree, and how do our rules catch a bad query?</h1>
+    <p class="lede">Before any SQL runs, our code turns the AI's text into a tree of labelled pieces, then asks that tree a few yes/no questions in order. The first "no" stops the query, and BigQuery never sees it. See also <a href="brand-scoping.html">brand scoping</a> and <a href="sql-errors.html">what happens when a query fails</a>.</p>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--ai);background:var(--ai-soft)"></i>SQL text the AI wrote</span>
+      <span><i class="sw" style="border-color:var(--tree);background:var(--tree-soft)"></i>parse tree</span>
+      <span><i class="sw" style="border-color:var(--ok);background:var(--ok-soft)"></i>check passed</span>
+      <span><i class="sw" style="border-color:var(--bad);background:var(--bad-soft)"></i>check stopped it</span>
+      <span><i class="sw" style="border-color:var(--ours);background:var(--ours-soft)"></i>our code rewrites</span>
+    </div>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span>A library called <b>sqlglot</b> reads the SQL text and builds a tree: one labelled box (a <i>node</i>) per piece, such as <code>Select</code>, <code>Star</code> (<code>*</code>), <code>Column</code> and <code>Table</code>.</span></li>
+      <li><span>Our checks walk that tree and ask questions such as "is every table one of the 4?" or "is there a <code>*</code> that isn't inside <code>COUNT</code>?".</span></li>
+      <li><span>A "no" calls <code>raise</code>: Python stops right there, the AI gets an <code>Error: …</code> message, and BigQuery is never called.</span></li>
+      <li><span>The checks only <i>read</i> the tree. The text that goes to BigQuery is the AI's own text (rewritten only by brand scoping, for brand managers).</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Step 1: the parser turns text into a tree</h2>
+    <div class="parse">
+      <div class="box is-ai">
+        <small>the AI's SQL (text)</small>
+        <span class="sqltext">SELECT * FROM users</span>
+        <small>(the real query names the full table, <code>`bigquery-public-data.thelook_ecommerce.users`</code>)</small>
+      </div>
+      <div class="mid">sqlglot<br>parse_one<br>──▶</div>
+      <div class="treecard" style="border-color:var(--tree)">
+        <svg viewBox="0 0 340 250" role="img" aria-label="Parse tree: Select has two children, Star and From; From has a child Table users">
+          <path class="edge" d="M170 46 L80 104"/>
+          <path class="edge" d="M170 46 L260 104"/>
+          <path class="edge" d="M260 144 L260 186"/>
+          <text class="lbl" x="88" y="72">select list</text>
+          <text class="lbl" x="222" y="72">from</text>
+          <rect x="120" y="10" width="100" height="36" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="170" y="33" text-anchor="middle" class="mono">Select</text>
+          <rect x="20" y="104" width="120" height="40" rx="8" style="fill:var(--bad-soft);stroke:var(--bad);stroke-width:2"/>
+          <text x="80" y="129" text-anchor="middle" class="mono">Star  *</text>
+          <text x="80" y="164" text-anchor="middle" class="sub">its parent is Select</text>
+          <rect x="200" y="104" width="120" height="40" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="260" y="129" text-anchor="middle" class="mono">From</text>
+          <rect x="185" y="186" width="150" height="48" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="260" y="207" text-anchor="middle" class="mono">Table users</text>
+          <text x="260" y="224" text-anchor="middle" class="sub">a real BigQuery table</text>
+        </svg>
+      </div>
+    </div>
+    <p>The parser doesn't look anything up and doesn't change anything. It only labels the pieces. The <code>*</code> becomes a node called <code>Star</code>. Nobody has worked out yet which columns it stands for, and nobody needs to: <b>the fact that a <code>Star</code> sits directly under <code>Select</code> is enough to know the query asks for every column</b>, including email.</p>
+  </section>
+
+  <section>
+    <h2>Same symbol, different parent</h2>
+    <p>The <code>*</code> in <code>COUNT(*)</code> becomes the same <code>Star</code> node. The only difference is the box directly above it, its <i>parent</i>. That's how the rule tells "count the rows" (fine) from "give me every column" (stopped).</p>
+    <div class="pair">
+      <div class="treecard">
+        <h3>SELECT * FROM users</h3>
+        <svg viewBox="0 0 300 200" role="img" aria-label="Star directly under Select: stopped">
+          <path class="edge" d="M150 44 L75 92"/>
+          <path class="edge" d="M150 44 L225 92"/>
+          <rect x="100" y="8" width="100" height="36" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="150" y="31" text-anchor="middle" class="mono">Select</text>
+          <rect x="20" y="92" width="110" height="38" rx="8" style="fill:var(--bad-soft);stroke:var(--bad);stroke-width:2"/>
+          <text x="75" y="116" text-anchor="middle" class="mono">Star *</text>
+          <rect x="170" y="92" width="110" height="38" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="225" y="116" text-anchor="middle" class="mono">From users</text>
+          <text x="75" y="156" text-anchor="middle" class="sub">parent = Select</text>
+          <text x="75" y="176" text-anchor="middle" style="fill:var(--bad);font-weight:600">❌ stopped</text>
+        </svg>
+      </div>
+      <div class="treecard">
+        <h3>SELECT COUNT(*) FROM users</h3>
+        <svg viewBox="0 0 300 200" role="img" aria-label="Star under Count: allowed">
+          <path class="edge" d="M150 44 L75 76"/>
+          <path class="edge" d="M150 44 L225 76"/>
+          <path class="edge" d="M75 112 L75 136"/>
+          <rect x="100" y="8" width="100" height="36" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="150" y="31" text-anchor="middle" class="mono">Select</text>
+          <rect x="20" y="76" width="110" height="36" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="75" y="99" text-anchor="middle" class="mono">Count</text>
+          <rect x="170" y="76" width="110" height="36" rx="8" style="fill:var(--tree-soft);stroke:var(--tree);stroke-width:1.5"/>
+          <text x="225" y="99" text-anchor="middle" class="mono">From users</text>
+          <rect x="20" y="136" width="110" height="36" rx="8" style="fill:var(--ok-soft);stroke:var(--ok);stroke-width:2"/>
+          <text x="75" y="159" text-anchor="middle" class="mono">Star *</text>
+          <text x="210" y="152" text-anchor="middle" class="sub">parent = Count</text>
+          <text x="210" y="172" text-anchor="middle" style="fill:var(--ok);font-weight:600">✅ allowed</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Step 2: the questions, one after another</h2>
+    <p>The gateway runs the checks in this order, all on the same text. Each check builds its own tree from it. Here is <code>SELECT * FROM users</code> going through:</p>
+    <div class="flow">
+      <div class="box is-ok step">
+        <span class="q">1. Can it be parsed, and is it exactly one statement?</span><span class="verdict">✅ yes</span>
+        <span class="where">guard.py · _parse_one_statement</span>
+      </div>
+      <div class="arrow"></div>
+      <div class="box is-ok step">
+        <span class="q">2. Is the top of the tree a query (a SELECT)?</span><span class="verdict">✅ Select</span>
+        <span class="where">guard.py · _require_select</span>
+      </div>
+      <div class="arrow"></div>
+      <div class="box is-ok step">
+        <span class="q">3. Is every Table node a real table, and one of the 4 allowed?</span><span class="verdict">✅ users</span>
+        <span class="where">guard.py · _reject_table_function, _require_allowed_table</span>
+      </div>
+      <div class="arrow"></div>
+      <div class="box is-ok step">
+        <span class="q">4. Does every named column trace back to schema.yaml?</span><span class="verdict">✅ none named</span>
+        <span class="where">pii.py · _require_schema_columns · qualify(…, expand_stars=False)</span>
+        <span class="why">There are no Column nodes at all, so there is nothing to fail. This check alone would miss <code>*</code>, which is why question 5 exists.</span>
+      </div>
+      <div class="arrow"></div>
+      <div class="box is-bad step">
+        <span class="q">5. Is there a Star whose parent isn't Count?</span><span class="verdict">❌ yes: raise</span>
+        <span class="where">pii.py · _reject_select_star</span>
+        <span class="why">The AI gets: <code>Error: Name the columns you need instead of using *. COUNT(*) is fine.</code></span>
+      </div>
+      <div class="arrow stop">skipped</div>
+      <div class="box skipped step">
+        <span class="q">6. Any whole row used as a value (e.g. <code>TO_JSON_STRING(u)</code>)?</span><span class="verdict">never asked</span>
+        <span class="where">pii.py · _reject_whole_rows</span>
+      </div>
+      <div class="arrow stop">skipped</div>
+      <div class="box skipped step">
+        <span class="q">Brand scope rewrite → byte-limit dry run → BigQuery runs it</span><span class="verdict">never reached</span>
+        <span class="where">brand_scope.py · gateway.py · db/</span>
+      </div>
+    </div>
+    <p>The AI reads the error and sends <code>SELECT id, age, gender, city, state, country, traffic_source, created_at FROM users LIMIT 3</code>. That has no Star and only schema columns, so it passes all of them. (In the live run on 2026-10-31, the AI named those 8 columns on its first try, because the prompt asks it to.)</p>
+  </section>
+
+  <section>
+    <h2>The code that stopped it</h2>
+<pre><span class="c"># pii.py: check() reads like a checklist, one named rule per line</span>
+def check(self, sql):
+    statement = sqlglot.parse_one(sql, read=self._dialect)   <span class="c"># text → tree</span>
+    self._require_schema_columns(statement)                  <span class="c"># Q4: trace each column; keep * as written</span>
+<span class="hit">    _reject_select_star(statement)</span>                           <span class="c"># Q5: stops SELECT * here</span>
+    _reject_whole_rows(statement)                            <span class="c"># Q6: a table used as a value</span>
+
+def _reject_select_star(statement):
+    for star in statement.find_all(exp.Star):                <span class="c"># every * anywhere in the tree</span>
+        if not isinstance(star.parent, exp.Count):           <span class="c"># the box directly above it</span>
+<span class="hit">            raise QueryRejected("Name the columns you need …")</span>  <span class="c"># stop here</span></pre>
+    <p class="note"><code>raise</code> means "stop this function now and jump out with an error". In <code>gateway.run</code>, every line after the check (brand scope, byte check, <code>database.execute</code>) is skipped, and the message goes back to the AI as <code>Error: …</code>.</p>
+  </section>
+
+  <section>
+    <h2>The trap: why <code>expand_stars=False</code></h2>
+    <p><code>qualify</code> can also replace <code>*</code> in the tree with the columns it knows from schema.yaml. That only changes the tree, not the text BigQuery runs.</p>
+    <div class="pair">
+      <div class="box is-bad">
+        <h3>Expansion on (the library default)</h3>
+        <ul>
+          <li>The tree becomes <code>SELECT id, age, city, …</code>. No Star is left, so question 5 finds nothing.</li>
+          <li>The check passes ✅, but BigQuery still runs the text <code>SELECT *</code> and returns email ❌.</li>
+        </ul>
+      </div>
+      <div class="box is-ok">
+        <h3>Expansion off (what we do)</h3>
+        <ul>
+          <li>The tree keeps its <code>Star</code>, exactly as the AI wrote it.</li>
+          <li>Question 5 sees it and stops the query before BigQuery.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every rule that uses the parse tree</h2>
+    <p>Each row is one question asked of the tree, in the order the gateway asks them. The first "no" wins.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Question asked of the tree</th><th>Caught example</th><th>What the AI is told</th></tr></thead>
+        <tbody>
+          <tr class="group is-tree"><td colspan="4">guard.py · which statement, which tables</td></tr>
+          <tr><td class="n">1</td><td>Can it be parsed at all? If not, we can't check it, so it doesn't run.</td><td class="sql">SELECT FROM WHERE</td><td class="msg">The query could not be parsed, so it was not run. Simplify it.</td></tr>
+          <tr><td class="n">2</td><td>Exactly one statement?</td><td class="sql">SELECT 1 …; DROP TABLE …</td><td class="msg">Send one statement per query.</td></tr>
+          <tr><td class="n">3</td><td>Is the top node a query (SELECT or UNION of SELECTs)?</td><td class="sql">DELETE FROM users WHERE TRUE</td><td class="msg">Only SELECT queries are allowed.</td></tr>
+          <tr><td class="n">4</td><td>Is every Table node a plain name, not a function?</td><td class="sql">SELECT * FROM ML.PREDICT(…)</td><td class="msg">Read only from tables. Table functions such as ML.PREDICT are not allowed.</td></tr>
+          <tr><td class="n">5</td><td>Is every Table one of the 4 allowed? (A one-part name the query defines with <code>WITH</code> is skipped.)</td><td class="sql">SELECT ip_address FROM events</td><td class="msg">Table `…events` is not allowed. Use only these tables: …</td></tr>
+          <tr class="group is-bad"><td colspan="4">pii.py · which columns (personal data)</td></tr>
+          <tr><td class="n">6</td><td>Does every column trace back, through aliases, joins, subqueries and WITH, to a column in schema.yaml? Is it clear which table it's from?</td><td class="sql">SELECT email FROM users<br>SELECT gender FROM users u JOIN orders o …</td><td class="msg">Read only the columns listed in the schema. When a column is in two joined tables, prefix it with the table alias. (Column 'email' could not be resolved.)</td></tr>
+          <tr><td class="n">7</td><td>Is there a Star whose parent isn't Count?</td><td class="sql">SELECT * FROM users<br>SELECT u.* …<br>SELECT * EXCEPT (id) …</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
+          <tr><td class="n">8</td><td>Is a whole table row used as a value (a TableColumn node)?</td><td class="sql">SELECT u FROM users u<br>TO_JSON_STRING(u)</td><td class="msg">Select columns, not whole rows: `u` is a table, not a column.</td></tr>
+          <tr class="group is-ours"><td colspan="4">brand_scope.py · rewrites the tree (brand managers only; the CEO's SQL is unchanged)</td></tr>
+          <tr><td class="n">9</td><td>Swap every Table node for a filtered copy (<code>_brand_scoped_users</code> …) and put those copies in the WITH clause at the front. The tree is turned back into text, and <b>that</b> text runs.</td><td class="sql">FROM users<br>→ FROM _brand_scoped_users AS users</td><td class="msg">Nothing; the AI isn't told. A table with no brand filter is stopped: "can't be limited to your brands".</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Not parser rules: the byte limit (a BigQuery dry run of the final text, in gateway.py) and the row cap (the database adapter). They run after all of the above.</p>
+  </section>
+
+  <div class="rule">
+    <h3>The rule in one sentence</h3>
+    <p>The parser only labels the pieces of the SQL. Our checks look at those labels and their parents, and the first "no" raises an error before BigQuery is ever called.</p>
+  </div>
+
+  <footer>
+    <div>Code: <code>QueryGuard.check</code> in <code>src/retail_agent/guard.py</code>; <code>PersonalDataCheck.check</code> in <code>src/retail_agent/pii.py</code>; <code>BrandScope.apply</code> in <code>src/retail_agent/brand_scope.py</code>; called in that order by <code>QueryGateway.run</code> in <code>src/retail_agent/gateway.py</code>, wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
+    <div>Library: sqlglot 30.27 (<code>parse_one</code>, <code>find_all</code>, <code>optimizer.qualify.qualify</code>), BigQuery dialect.</div>
+    <div>Tests: <code>tests/test_query_guard.py</code>, <code>tests/test_pii.py</code>, <code>tests/test_brand_scope.py</code>. Rejections are logged as <code>SQL rejected: …</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Ticket: <code>tasks/08-block-personal-data-columns.md</code>. Plan: step 2 and step 3 in <code>docs/plan.md</code>. See also <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>
