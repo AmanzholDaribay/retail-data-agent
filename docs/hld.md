@@ -238,6 +238,31 @@ flowchart LR
 | UX | Thumbs up or down on each answer (stored as LangSmith feedback), how often users rephrase the same question, and answer time. | Accuracy alone misses answers that are right but unhelpful or slow. |
 | Safety checks | Pass or fail in code, no judge: no email or name pattern in any answer, a brand manager's sent SQL always carries the brand filter, at most 5 LLM calls per question. Already covered by unit tests for the gateway; run on traces as well. | Safety failures are never averaged into a score. |
 
+## Persona and prompts (design only)
+
+The brief's persona management: the CEO changes the tone of the reports weekly, without a developer and without a redeploy. The company-wide system prompt, tone included, lives in a self-hosted **Langfuse** prompt store that admins edit in its web page; each user's extras (brands, preferences) come from the app database. Today the prompt is the file `prompts/system.md`, filled with `{schema}`, `{dialect}` and `{user-brands}` when the app starts, so a tone change needs an edit and a restart.
+
+```mermaid
+flowchart LR
+    admin(["CEO or admin"]) -->|"logs in, edits, labels production"| lf[("Langfuse, self-hosted<br/>tone + base prompt, versioned")]
+    lf -->|"production version, cached"| build["Prompt assembled<br/>before every question"]
+    file["prompts/system.md<br/>fallback copy"] -.->|"Langfuse down"| build
+    db[("App database<br/>brands · preferences")] --> build
+    rules["Safety rules<br/>in code, not editable"] --> build
+    build --> agent["Agent loop, as today<br/>every SQL still goes through the gateway"]
+```
+
+| Part | Design | Why |
+|---|---|---|
+| Where prompts live | Langfuse prompt management, self-hosted on the company's own infrastructure. The editable prompt holds the persona and tone (e.g. "Brief and confident, lead with risks"); every save is a new version, and the version labelled `production` is the one in use. | Non-developers change the tone in a web page; prompts and traces stay inside the company. |
+| Who can edit | Langfuse's own logins and roles: admins (the CEO's office) can edit and promote a version; everyone else can only view. Users never change the company tone through the chat; they change only their own preferences (above). | A brand manager can't make everyone's reports sarcastic. No admin page to build. |
+| No redeploy | The agent loads the `production` version through the Langfuse SDK, which caches it for a short time (about a minute), so a promoted change reaches the next questions without a restart. | Requirement 8: a weekly tone change is a few clicks. |
+| Per-user parts | Brands (`{user-brands}`) and preferences (`{user-preferences}`) come from the app database for the signed-in user and are filled into the same prompt. | Company tone and personal style combine; neither can change the other's. |
+| Safety rules locked | The rules that protect data (analysis only, no PII, own brands, read only) are a separate part of the prompt kept in the code, added after the editable part, and not editable in Langfuse. The query gateway enforces them anyway. | A persona saying "ignore the privacy rules" changes nothing: tone is editable, access is not. |
+| Before it goes live | A new version is saved as a draft and runs a few evaluation questions (see Evaluation) before it's labelled `production`. Rollback is moving the label back to the previous version. | A bad tone change is caught early and undone in one click. |
+| Failure | If Langfuse is down, the SDK's last cached copy is used, and if there is none, the local `prompts/system.md`. | Prompt management is never a single point of failure. |
+| One tool | In production, Langfuse also takes over tracing and the LLM judge from LangSmith (used in the prototype), so traces, prompts and evaluations sit in one self-hosted tool. | One place to debug a bad answer, from the prompt version to the SQL. |
+
 ## Resilience
 
 | Failure | Handling | Status |
