@@ -39,14 +39,15 @@ def main() -> None:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             _show_sql(message["sql"])
-            st.markdown(message["text"])
+            # Streamlit reads text between two $ as a math formula, which garbles prices; \$ shows a plain $.
+            st.markdown(message["text"].replace("$", "\\$"))
 
     app: App = st.session_state.app
     # A paused turn waits for Yes or Cancel; the delete tool treats anything but "yes" as cancel.
     if st.session_state.confirmation:
         with st.chat_message("assistant"):
             # Two trailing spaces keep the tool's line breaks (one report per line) in markdown.
-            st.warning(st.session_state.confirmation.replace("\n", "  \n"))
+            st.warning(st.session_state.confirmation.replace("\n", "  \n").replace("$", "\\$"))
             yes, cancel = st.columns(2)
             if yes.button("Yes", use_container_width=True):
                 _run(lambda: app.confirm("yes"))
@@ -58,7 +59,7 @@ def main() -> None:
         st.session_state.messages.append({"role": "user", "text": question, "sql": []})
         # Shown now, so the question stays on screen while the agent works.
         with st.chat_message("user"):
-            st.markdown(question)
+            st.markdown(question.replace("$", "\\$"))
         _run(lambda: app.ask(question))
 
 
