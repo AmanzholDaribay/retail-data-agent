@@ -263,6 +263,24 @@ flowchart LR
 | Failure | If Langfuse is down, the SDK's last cached copy is used, and if there is none, the local `prompts/system.md`. | Prompt management is never a single point of failure. |
 | One tool | In production, Langfuse also takes over tracing and the LLM judge from LangSmith (used in the prototype), so traces, prompts and evaluations sit in one self-hosted tool. | One place to debug a bad answer, from the prompt version to the SQL. |
 
+## Extensibility
+
+New capabilities (charts, emailing reports, web search for trends) plug in through the two patterns the prototype already uses:
+
+- **A new capability is a tool.** A LangChain `@tool` function, made by a factory that binds the signed-in user, the way `make_save_report(store, owner)` and `make_run_sql(gateway)` are made in `tools.py`. The agent loop, the call budget and tracing need no change; the model sees the new tool's description and starts using it.
+- **A new external system is an adapter.** A small protocol with one implementation per system, the way `Database` (`execute`, `estimate_bytes`) has `BigQueryDatabase` in `db/`. Another warehouse (Postgres, Snowflake) is one more adapter; the query gateway stays as it is, since it parses SQL with `sqlglot`, which reads many dialects. Mail, search and chart services get their own small protocols the same way, so a provider can be swapped in config.
+
+Adding a tool is easy; what matters is that each one inherits an existing guard:
+
+| Kind of tool | Example | Guard it inherits |
+|---|---|---|
+| Reads company data | A new data source | Goes through the query gateway: allowed columns, pseudonyms, small groups, brand scope, byte cap. No tool reads data any other way. |
+| Uses data already fetched | Charts | Takes only rows the gateway already returned in this conversation and renders an image. No new path to data. |
+| Acts outside the system | Email a report | The same confirmation as deleting reports: the code shows the recipients and the content and waits for an explicit yes. Recipients limited to the company's domain; the sender is the signed-in user. |
+| Brings outside text in | Web search for trends | The search query must not carry customer data or internal figures. Results are passed to the model as untrusted text, so a page saying "ignore your rules" is just data. |
+
+New tools run inside the same `MAX_LLM_CALLS` budget (each round of tool calls needs a model call), so they can't loop or run up cost, and each call shows up as its own step in the trace.
+
 ## Resilience
 
 | Failure | Handling | Status |
