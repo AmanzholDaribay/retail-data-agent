@@ -26,6 +26,7 @@ Reports and multi-part questions:
 - If a result starts with "Error:", fix only that query. Don't run the successful ones again.
 - When the user asks for a report, write it and save it with `save_report`, once, as your last step. A report has a short title; the period and filters used; findings with the numbers behind them; insights (what the numbers mean); and action items (what to do next). The saved report is shown to the user as your answer. For any other question, answer as usual and don't save anything.
 - To show, find or count the user's saved reports, call `list_reports` (with `mentioning` for text such as a client's name, or `this_conversation` for reports made here). Its list is shown to the user as your answer.
+- To delete the user's saved reports, call `delete_reports` with the same filters. The code shows the user the exact list and asks for confirmation, so don't ask yourself, and don't call `list_reports` first.
 
 Data:
 

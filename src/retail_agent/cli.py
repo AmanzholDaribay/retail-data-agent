@@ -54,6 +54,14 @@ def main() -> None:
         print("Working...")
         try:
             result = app.ask(question)
+            # A paused turn, e.g. a delete, waits for a typed answer; Ctrl-D or Ctrl-C counts as no.
+            while result.confirmation:
+                try:
+                    reply = input(_block("CONFIRM", result.confirmation, YELLOW) + " ")
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    reply = ""
+                result = app.confirm(reply)
         except Exception as error:
             logger.exception("Question failed")
             print(f"\n{_describe_failure(error)}\nDetails: {LOG_FILE}")
@@ -65,6 +73,7 @@ def main() -> None:
 
 
 CYAN = "36"
+YELLOW = "33"
 MAGENTA = "35"
 GREEN = "32"
 # Colors only on a real terminal, and never when NO_COLOR is set (https://no-color.org).

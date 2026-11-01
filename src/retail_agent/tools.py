@@ -3,6 +3,7 @@ from datetime import datetime
 from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
+from langgraph.types import interrupt
 
 from retail_agent.agent import current_turn
 from retail_agent.db.base import QueryError
@@ -79,6 +80,41 @@ def make_list_reports(store: ReportStore, owner: str) -> BaseTool:
         return f"Your saved reports{which} ({len(reports)}):\n" + "\n".join(lines)
 
     return list_reports
+
+
+def make_delete_reports(store: ReportStore, owner: str) -> BaseTool:
+    # return_direct: the outcome (deleted or cancelled) is the answer, so deleting costs one LLM call.
+    @tool(return_direct=True)
+    def delete_reports(runtime: ToolRuntime, mentioning: str = "", this_conversation: bool = False) -> str:
+        """Delete the user's saved reports that match, after the user confirms. The code shows the exact list and
+        asks the user, so don't ask yourself. Its result is your answer.
+
+        mentioning: only reports whose title, question or text contain this, e.g. "Client X". Empty for all.
+        this_conversation: only reports made in this conversation."""
+        conversation_id = runtime.config["configurable"]["thread_id"]
+        reports = store.find(
+            owner, mentioning=mentioning or None, conversation_id=conversation_id if this_conversation else None
+        )
+        which = (f" mentioning '{mentioning}'" if mentioning else "") + (" from this conversation" if this_conversation else "")
+        if not reports:
+            return f"No saved reports{which}. Nothing was deleted."
+        these = "this report" if len(reports) == 1 else f"these {len(reports)} reports"
+        lines = "\n".join(_describe(report, conversation_id) for report in reports)
+        # Pauses the turn until the user answers; App.confirm resumes it. LangGraph then runs this tool again from the
+        # top, so the ids shown now travel with the pause, and only those are deleted, not a fresh search.
+        reply = interrupt(
+            {
+                "question": f"Your saved reports{which} ({len(reports)}):\n{lines}\n"
+                f"Type yes to delete {these}, anything else cancels:",
+                "ids": [report.id for report in reports],
+            }
+        )
+        if reply["answer"].strip().lower() != "yes":
+            return "Cancelled. Nothing was deleted."
+        deleted = store.delete(owner, reply["ids"])
+        return f"Deleted {deleted} report{'s' if deleted != 1 else ''}."
+
+    return delete_reports
 
 
 def _describe(report: SavedReport, conversation_id: str) -> str:

@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command, Interrupt
 
 from retail_agent.agent import BUDGET_REACHED, build_agent, current_turn
 from retail_agent.config import Settings
@@ -22,7 +23,7 @@ from retail_agent.query_safety.step2_personal_data.small_groups import SmallGrou
 from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
 from retail_agent.reports import ReportStore
-from retail_agent.tools import make_list_reports, make_run_sql, make_save_report
+from retail_agent.tools import make_delete_reports, make_list_reports, make_run_sql, make_save_report
 from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TurnResult:
-    answer: str
+    answer: str  # empty while the turn waits for a confirmation
     sql: list[str]
+    # Set when the turn is paused for the user to confirm, e.g. the list of reports to delete; resume with App.confirm.
+    confirmation: str | None = None
 
 
 class App:
@@ -42,12 +45,26 @@ class App:
         self.schema_text = schema_text  # the schema exactly as the LLM sees it in the system prompt
         # The checkpointer keeps the conversation under this id; a new App (one CLI run) starts a new one.
         self._thread_id = uuid4().hex
+        # What a paused turn waits on, until App.confirm resumes it: one Interrupt per tool that paused.
+        self._paused: list[Interrupt] = []
 
     def ask(self, question: str) -> TurnResult:
         logger.info("Question: %s", question)
+        return self._run({"messages": [HumanMessage(question)]})
+
+    def confirm(self, answer: str) -> TurnResult:
+        """Resume the paused turn with what the user typed. The tool that paused it decides what the answer means."""
+        if not self._paused:
+            raise RuntimeError("No turn is waiting for a confirmation")
+        logger.info("Confirmation answer: %r", answer)
+        # By id: when one reply paused two tools (two deletes), each gets its own answer, one question at a time.
+        first = self._paused[0]
+        return self._run(Command(resume={first.id: {**first.value, "answer": answer}}))
+
+    def _run(self, agent_input: dict | Command) -> TurnResult:
         config = {"callbacks": [LlmCallLogger()], "configurable": {"thread_id": self._thread_id}}
         try:
-            state = self._agent.invoke({"messages": [HumanMessage(question)]}, config=config)
+            state = self._agent.invoke(agent_input, config=config)
         except Exception as error:
             self._close_unanswered_tool_calls(config, error)
             raise
@@ -59,6 +76,11 @@ class App:
             for call in message.tool_calls
             if call["name"] == "run_sql"
         ]
+        if state.get("__interrupt__"):
+            self._paused = state["__interrupt__"]
+            logger.info("Waiting for the user to confirm")
+            return TurnResult(answer="", sql=sql, confirmation=self._paused[0].value["question"])
+        self._paused = []
         if turn[-1].name == BUDGET_REACHED:
             logger.warning("Stopped at the LLM call budget after %d SQL statements", len(sql))
         else:
@@ -133,7 +155,12 @@ def assemble(
     reports = ReportStore(settings.reports_path)
     agent = build_agent(
         model,
-        [make_run_sql(gateway), make_save_report(reports, user.name), make_list_reports(reports, user.name)],
+        [
+            make_run_sql(gateway),
+            make_save_report(reports, user.name),
+            make_list_reports(reports, user.name),
+            make_delete_reports(reports, user.name),
+        ],
         system_prompt,
         settings.max_llm_calls,
         checkpointer=InMemorySaver(),

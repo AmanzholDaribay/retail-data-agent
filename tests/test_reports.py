@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from fakes import FakeDatabase, ScriptedChatModel
 from harness import ORDER_ITEMS, assemble_app
 from langchain_core.messages import AIMessage
@@ -203,3 +205,126 @@ def test_the_header_names_both_filters(tmp_path):
     result = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3").ask("Brazil reports here?")
 
     assert result.answer == "No saved reports mentioning 'Brazil' from this conversation."
+
+
+def delete_reports_call(**args) -> AIMessage:
+    return AIMessage(content="", tool_calls=[{"name": "delete_reports", "args": args, "id": "call_delete"}])
+
+
+def titles(store: ReportStore, owner: str = "ceo") -> list[str]:
+    return [report.title for report in store.find(owner)]
+
+
+def test_delete_by_text_shows_the_exact_list_and_deletes_only_after_yes(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Client X Q1 review")
+    save(store, "ceo", "Unrelated")
+    save(store, "ceo", "Q2", report="Notes on client x")
+    model = ScriptedChatModel(script=[delete_reports_call(mentioning="Client X")])
+    app = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3")
+
+    paused = app.ask("Delete all reports mentioning Client X")
+
+    assert paused.answer == ""
+    assert "3 · " in paused.confirmation and "Q2" in paused.confirmation
+    assert "1 · " in paused.confirmation and "Client X Q1 review" in paused.confirmation
+    assert "Unrelated" not in paused.confirmation
+    assert "Type yes to delete these 2 reports" in paused.confirmation
+    assert titles(store) == ["Q2", "Unrelated", "Client X Q1 review"]  # nothing deleted before the yes
+
+    done = app.confirm("yes")
+
+    assert done.answer == "Deleted 2 reports."
+    assert done.confirmation is None
+    assert titles(store) == ["Unrelated"]
+    assert len(model.received) == 1  # proposing, pausing and deleting cost one LLM call
+
+
+def test_delete_the_reports_made_in_this_conversation(tmp_path):
+    path = tmp_path / "reports.sqlite3"
+    save(ReportStore(path), "ceo", "From an earlier run")
+    model = ScriptedChatModel(
+        script=[two_queries_at_once(), save_report_call("Q1 report"), delete_reports_call(this_conversation=True)]
+    )
+    app = assemble_app(model, two_results(), reports_path=path)
+    app.ask("Create a Q1 report")
+
+    paused = app.ask("Delete all the reports we made in this conversation")
+    assert "Q1 report" in paused.confirmation and "From an earlier run" not in paused.confirmation
+    app.confirm(" YES ")
+
+    assert titles(ReportStore(path)) == ["From an earlier run"]
+
+
+@pytest.mark.parametrize("answer", ["no", "y", "ok", ""])
+def test_anything_but_yes_cancels(tmp_path, answer):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Client X Q1 review")
+    model = ScriptedChatModel(script=[delete_reports_call(mentioning="Client X")])
+    app = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3")
+    app.ask("Delete all reports mentioning Client X")
+
+    result = app.confirm(answer)
+
+    assert result.answer == "Cancelled. Nothing was deleted."
+    assert titles(store) == ["Client X Q1 review"]
+
+
+def test_a_user_cant_delete_another_users_reports(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    theirs = save(store, "levis_manager", "Client X Levi's sales")
+    model = ScriptedChatModel(script=[delete_reports_call(mentioning="Client X")])
+
+    result = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3").ask("Delete reports mentioning Client X")
+
+    assert result.confirmation is None
+    assert result.answer == "No saved reports mentioning 'Client X'. Nothing was deleted."
+    assert store.delete("ceo", [theirs]) == 0
+    assert titles(store, "levis_manager") == ["Client X Levi's sales"]
+
+
+def test_only_the_reports_that_were_shown_are_deleted(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Client X Q1 review")
+    model = ScriptedChatModel(script=[delete_reports_call(mentioning="Client X")])
+    app = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3")
+    app.ask("Delete all reports mentioning Client X")
+    save(store, "ceo", "Client X Q2 review")  # saved by another run while this one waits
+
+    app.confirm("yes")
+
+    assert titles(store) == ["Client X Q2 review"]
+
+
+def test_the_conversation_goes_on_after_a_cancel(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Client X Q1 review")
+    model = ScriptedChatModel(script=[delete_reports_call(mentioning="Client X"), AIMessage("There are 4 tables.")])
+    app = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3")
+    app.ask("Delete all reports mentioning Client X")
+    app.confirm("no")
+
+    assert app.ask("What data is there?").answer == "There are 4 tables."
+
+
+def test_two_deletes_in_one_reply_are_confirmed_one_at_a_time(tmp_path):
+    path = tmp_path / "reports.sqlite3"
+    store = ReportStore(path)
+    save(store, "ceo", "Client X review")
+    save(store, "ceo", "Client Y review")
+    two_deletes = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "delete_reports", "args": {"mentioning": "Client X"}, "id": "call_x"},
+            {"name": "delete_reports", "args": {"mentioning": "Client Y"}, "id": "call_y"},
+        ],
+    )
+    app = assemble_app(ScriptedChatModel(script=[two_deletes]), FakeDatabase([]), reports_path=path)
+
+    first = app.ask("Delete the Client X and Client Y reports")
+    second = app.confirm("yes" if "Client X" in first.confirmation else "no")
+    done = app.confirm("no" if "Client X" in first.confirmation else "yes")
+
+    assert "Client Y" in second.confirmation or "Client X" in second.confirmation
+    assert done.confirmation is None
+    assert titles(store) == ["Client Y review"]

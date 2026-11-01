@@ -2,8 +2,8 @@
 
 Each row records who asked (the owner), in which conversation, when, the question, the SQL that ran and the report
 text. The owner and conversation come from the code, never from the model, so a report can't be saved for someone
-else. Reading them back (`find`) always filters on the owner in the SQL itself, and deleting (ticket 13) will reuse
-the same selection, so it removes exactly what a list shows.
+else. Reading them back (`find`) and deleting (`delete`) always filter on the owner in the SQL itself. Deleting takes
+the ids a `find` returned, so it removes exactly what a list shows.
 
 The file and its table are created on the first save, so a run without reports leaves no file behind.
 """
@@ -80,3 +80,13 @@ class ReportStore:
             connection.execute(_CREATE_TABLE)  # a file without the table (e.g. an empty one) has no reports
             rows = connection.execute(query + " ORDER BY id DESC", parameters).fetchall()
         return [SavedReport(*row) for row in rows]
+
+    def delete(self, owner: str, ids: list[int]) -> int:
+        """Delete `owner`'s reports with these ids and return how many went. Another owner's id is skipped."""
+        if not ids or not self._path.exists():
+            return 0
+        placeholders = ", ".join("?" * len(ids))
+        with closing(sqlite3.connect(self._path)) as connection, connection:
+            connection.execute(_CREATE_TABLE)
+            cursor = connection.execute(f"DELETE FROM reports WHERE owner = ? AND id IN ({placeholders})", [owner, *ids])
+        return cursor.rowcount
