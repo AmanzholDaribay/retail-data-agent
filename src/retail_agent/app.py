@@ -40,11 +40,20 @@ class TurnResult:
 class App:
     """One conversation: every question asked of the same App sees the earlier turns."""
 
-    def __init__(self, agent: CompiledStateGraph, schema_text: str) -> None:
+    def __init__(self, agent: CompiledStateGraph, schema_text: str, user: User, model_name: str) -> None:
         self._agent = agent
         self.schema_text = schema_text  # the schema exactly as the LLM sees it in the system prompt
         # The checkpointer keeps the conversation under this id; a new App (one CLI run) starts a new one.
         self._thread_id = uuid4().hex
+        # Context for LangSmith traces (sent only when LANGSMITH_TRACING=true). LangSmith groups traces that share a
+        # thread_id into one thread, so a CLI run reads as one conversation.
+        self._trace_metadata = {
+            "user": user.name,
+            "brands": ", ".join(sorted(user.brands)) if user.brands else "all",
+            "model": model_name,
+            "thread_id": self._thread_id,
+        }
+        self._trace_tags = [user.name]
         # What a paused turn waits on, until App.confirm resumes it: one Interrupt per tool that paused.
         self._paused: list[Interrupt] = []
 
@@ -62,7 +71,14 @@ class App:
         return self._run(Command(resume={first.id: {**first.value, "answer": answer}}))
 
     def _run(self, agent_input: dict | Command) -> TurnResult:
-        config = {"callbacks": [LlmCallLogger()], "configurable": {"thread_id": self._thread_id}}
+        config = {
+            "callbacks": [LlmCallLogger()],
+            "configurable": {"thread_id": self._thread_id},
+            # A resumed turn (the user's yes or no to a delete) is its own trace, in the same thread.
+            "run_name": "confirmation" if isinstance(agent_input, Command) else "question",
+            "metadata": self._trace_metadata,
+            "tags": self._trace_tags,
+        }
         try:
             state = self._agent.invoke(agent_input, config=config)
         except Exception as error:
@@ -166,4 +182,4 @@ def assemble(
         checkpointer=InMemorySaver(),
         fallback_models=fallback_models,
     )
-    return App(agent, schema_text)
+    return App(agent, schema_text, user, settings.llm_model)

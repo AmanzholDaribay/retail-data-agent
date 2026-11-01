@@ -9,6 +9,10 @@ A stopped query never reaches the database. Its message goes back to the model, 
 
 import logging
 import time
+from typing import Any
+
+from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 
 from retail_agent.db.base import Database, QueryResult
 from retail_agent.query_safety.step1_guard import QueryGuard, QueryRejected
@@ -48,6 +52,8 @@ class QueryGateway:
         self._max_bytes = max_bytes
         self._scope = scope
 
+    # A step of its own in a LangSmith trace (when tracing is on), under the run_sql tool call.
+    @traceable(name="query_gateway")
     def run(self, sql: str) -> QueryResult:
         logger.info("SQL: %s", sql)
         started = time.monotonic()
@@ -64,6 +70,7 @@ class QueryGateway:
             scoped_sql = self._scope.apply(pseudonymized_sql)
             if scoped_sql != sql:
                 logger.info("Rewritten SQL: %s", scoped_sql)
+            _add_to_trace(rewritten_sql=scoped_sql)  # the SQL BigQuery gets, which the tool call alone doesn't show
             # Step 4: size. Stop the query before it scans more than max_bytes.  -> _check_bytes below
             self._check_bytes(scoped_sql)
             # Every step passed: run the rewritten query, keeping at most max_rows rows.
@@ -74,6 +81,7 @@ class QueryGateway:
         except Exception as error:
             logger.warning("SQL failed after %.1fs: %s", time.monotonic() - started, error)
             raise
+        _add_to_trace(rows=len(result.rows), bytes_processed=result.bytes_processed)
         logger.info(
             "SQL finished in %.1fs: %d rows, %s bytes processed",
             time.monotonic() - started,
@@ -90,6 +98,13 @@ class QueryGateway:
                 f"This query would scan {_format_bytes(estimated)}, over the {_format_bytes(self._max_bytes)} limit per query. "
                 "Select fewer columns or filter on a narrower date range."
             )
+
+
+def _add_to_trace(**metadata: Any) -> None:
+    """Add metadata to this gateway step in the LangSmith trace. Does nothing when there is no trace."""
+    run_tree = get_current_run_tree()
+    if run_tree is not None:
+        run_tree.add_metadata(metadata)
 
 
 def _format_bytes(size: int) -> str:

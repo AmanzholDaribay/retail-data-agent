@@ -31,6 +31,8 @@ class ScriptedChatModel(BaseChatModel):
     script: list[Any]  # AIMessage or Exception; Any stops pydantic coercing exceptions into messages
     received: list[list[BaseMessage]] = Field(default_factory=list)
     had_tools: list[bool] = Field(default_factory=list)  # whether each call was given tools
+    metadata_seen: list[dict[str, Any]] = Field(default_factory=list)  # the trace metadata each call carried
+    tags_seen: list[list[str]] = Field(default_factory=list)
     tools_bound: bool = False
 
     @property
@@ -44,6 +46,8 @@ class ScriptedChatModel(BaseChatModel):
     def _generate(self, messages: list[BaseMessage], stop: Any = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
         self.received.append(list(messages))
         self.had_tools.append(self.tools_bound)
+        self.metadata_seen.append(dict(run_manager.metadata) if run_manager else {})
+        self.tags_seen.append(list(run_manager.tags) if run_manager else [])
         self.tools_bound = False  # the agent binds tools again before every call that has them
         if len(self.received) > len(self.script):
             raise AssertionError(f"Model was called {len(self.received)} times, but the script has {len(self.script)} replies")

@@ -149,7 +149,7 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 ## Observability
 
 - **Log file** (`logs/retail-agent.log`, built): each question, each LLM call with duration or error, each SQL statement with duration, rows and bytes processed.
-- **LangSmith tracing** (planned): off by default so reviewers need no account; turned on with `LANGSMITH_TRACING=true`. Each question becomes one trace with every LLM call, tool call, SQL, latency and token count, tagged with user, model, bytes scanned and retries.
+- **LangSmith tracing** (built; switched on by `.env`): each question is one trace labelled with the user, brands, model and conversation (one LangSmith thread per CLI run); a `query_gateway` step under each `run_sql` shows the SQL BigQuery ran after the rewrites, with rows and bytes. Traces hold prompts, SQL and already-masked rows; the pseudonym salt is a query parameter and never appears. off by default so reviewers need no account; turned on with `LANGSMITH_TRACING=true`. Each question becomes one trace with every LLM call, tool call, SQL, latency and token count, tagged with user, model, bytes scanned and retries.
 
 ## External services
 
