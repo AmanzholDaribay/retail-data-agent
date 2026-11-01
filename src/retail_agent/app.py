@@ -30,9 +30,15 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class SqlRun:
+    sql: str  # as the model wrote it
+    error: str | None  # why it didn't run (a guard rejection or a BigQuery error); None when it ran
+
+
+@dataclass(frozen=True)
 class TurnResult:
     answer: str  # empty while the turn waits for a confirmation
-    sql: list[str]
+    sql: list[SqlRun]  # every run_sql call of this turn, in order
     # Set when the turn is paused for the user to confirm, e.g. the list of reports to delete; resume with App.confirm.
     confirmation: str | None = None
 
@@ -85,8 +91,14 @@ class App:
             self._close_unanswered_tool_calls(config, error)
             raise
         turn = current_turn(state["messages"])
+        # run_sql returns "Error: …" when the gateway rejects a query or BigQuery fails it.
+        errors = {
+            message.tool_call_id: message.text.removeprefix("Error: ")
+            for message in turn
+            if isinstance(message, ToolMessage) and message.text.startswith("Error:")
+        }
         sql = [
-            call["args"]["sql"]
+            SqlRun(sql=call["args"]["sql"], error=errors.get(call["id"]))
             for message in turn
             if isinstance(message, AIMessage)
             for call in message.tool_calls

@@ -8,6 +8,7 @@ from harness import ORDER_ITEMS, PRODUCTS, assemble_app, tool_output_seen_by_mod
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from retail_agent.agent import LAST_CALL_NOTE
+from retail_agent.app import SqlRun
 from retail_agent.db.base import QueryError, QueryResult
 
 
@@ -19,7 +20,7 @@ def test_answers_a_question_with_the_sql_it_ran():
     result = assemble_app(model, database).ask("Which brand has the most revenue?")
 
     assert result.answer == "Brand A leads with $100."
-    assert result.sql == [sql]
+    assert [run.sql for run in result.sql] == [sql]
     assert len(database.executed) == 1
 
 
@@ -52,7 +53,7 @@ def test_an_empty_result_can_be_corrected_with_another_query():
 
     result = assemble_app(model, database).ask("How many Calvin Klein products are there?")
 
-    assert result.sql == [wrong, fixed]
+    assert [run.sql for run in result.sql] == [wrong, fixed]
     assert result.answer == "Calvin Klein has 12 products."
 
 
@@ -62,7 +63,7 @@ def test_a_question_about_the_data_itself_is_answered_without_sql():
 
     result = assemble_app(model, database).ask("What data do you have?")
 
-    assert result.sql == []
+    assert [run.sql for run in result.sql] == []
     assert database.executed == []
 
 
@@ -105,8 +106,23 @@ def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
     assert isinstance(error_seen_by_model, ToolMessage)
     assert error_seen_by_model.text == "Error: Invalid timestamp: '2026-13-01'"
     assert result.answer == "Revenue is $100."
-    assert result.sql == [bad_sql, good_sql]
+    assert result.sql == [SqlRun(bad_sql, error="Invalid timestamp: '2026-13-01'"), SqlRun(good_sql, error=None)]
     assert len(database.executed) == 2
+
+
+def test_a_query_the_gateway_rejects_is_kept_with_the_reason():
+    rejected = f"SELECT * FROM {PRODUCTS}"
+    fixed = f"SELECT COUNT(id) AS n FROM {PRODUCTS}"
+    model = ScriptedChatModel(script=[run_sql_call(rejected), run_sql_call(fixed), AIMessage("There are 12 products.")])
+    database = FakeDatabase([QueryResult(columns=["n"], rows=[(12,)])])
+
+    result = assemble_app(model, database).ask("How many products are there?")
+
+    assert result.sql == [
+        SqlRun(rejected, error="Name the columns you need instead of using *. COUNT(*) is fine."),
+        SqlRun(fixed, error=None),
+    ]
+    assert len(database.executed) == 1  # the rejected query never reached the database
 
 
 def test_the_last_allowed_call_answers_from_the_results_so_far():
@@ -143,7 +159,7 @@ def test_a_model_that_calls_a_tool_on_its_last_call_ends_at_the_call_budget():
     result = assemble_app(model, database).ask("Count forever")
 
     assert len(model.received) == 5
-    assert result.sql == [f"SELECT {n}" for n in range(1, 6)]
+    assert [run.sql for run in result.sql] == [f"SELECT {n}" for n in range(1, 6)]
     assert result.answer == (
         "I couldn't finish this question within 5 model calls. Try asking it in a simpler or more specific way."
     )
@@ -165,7 +181,7 @@ def test_a_follow_up_question_sees_the_earlier_turn():
     assert "Brand A leads with $100." in follow_up_input
     assert follow_up_input[-1] == "And the month before?"
     assert result.answer == "The month before, Brand B led."
-    assert result.sql == []  # only this turn's SQL, not the earlier turn's
+    assert [run.sql for run in result.sql] == []  # only this turn's SQL, not the earlier turn's
 
 
 def test_a_new_app_starts_a_fresh_conversation():
@@ -264,7 +280,7 @@ def test_a_failing_model_falls_back_to_the_next_model_which_keeps_the_tools():
     result = assemble_app(model, database, fallback_models=(fallback,)).ask("Which brands are there?")
 
     assert result.answer == "Brand A."
-    assert result.sql == [sql]
+    assert [run.sql for run in result.sql] == [sql]
     assert fallback.had_tools == [True, True]
     # The primary is tried first on every call, so a busy model is used again once it recovers.
     assert len(model.received) == 2

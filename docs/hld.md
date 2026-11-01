@@ -51,7 +51,7 @@ Dashed boxes are planned. The gateway box is built with its guard, brand scope, 
 
 | Component | Responsibility | Where | Status |
 |---|---|---|---|
-| CLI | Chat loop in the terminal. `--user` picks who is asking, from `users.yaml` (`users.py`). Prints each answer with the SQL that produced it; a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
+| CLI | Chat loop in the terminal. `--user` picks who is asking, from `users.yaml` (`users.py`). Prints each answer with the SQL that produced it (`--verbose`: every SQL tried, ✅ or ❌ with the reason); a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
 | App | One conversation per CLI run. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
 | Agent loop | The model ↔ tools loop, from LangChain `create_agent` (LangGraph underneath). Remembers earlier turns through a checkpointer. | `agent.py` | built |
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |

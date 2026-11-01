@@ -7,6 +7,7 @@ Every answer prints in the same blocks:
 
 ```
 ── SQL ──────────────   (one block per query that ran; "SQL 1 of 3" when several)
+                        (with --verbose: every query tried, each ending in ✅ ran or ❌ <reason>)
 ── ANSWER ───────────   (plain-language answer)
 ── CONFIRM ──────────   (only for deletes)
 ```

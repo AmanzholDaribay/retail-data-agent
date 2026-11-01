@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ask retail analytics questions in plain language.")
     parser.add_argument("--user", required=True, help="who is asking, one of the names in the users file")
+    parser.add_argument("--verbose", action="store_true", help="show every SQL the model tried, with ✅ or ❌ and the reason")
     args = parser.parse_args()
     # Export .env into the environment so the LLM and Google SDKs find their credentials.
     load_dotenv()
@@ -66,9 +67,14 @@ def main() -> None:
             logger.exception("Question failed")
             print(f"\n{_describe_failure(error)}\nDetails: {LOG_FILE}")
             continue
-        for number, sql in enumerate(result.sql, start=1):
-            title = "SQL" if len(result.sql) == 1 else f"SQL {number} of {len(result.sql)}"
-            print(_block(title, sql, CYAN))
+        # The plain run shows only the SQL that ran; --verbose shows every attempt, and why one didn't run.
+        shown = result.sql if args.verbose else [run for run in result.sql if run.error is None]
+        for number, run in enumerate(shown, start=1):
+            title = "SQL" if len(shown) == 1 else f"SQL {number} of {len(shown)}"
+            body = run.sql
+            if args.verbose:
+                body += "\n✅ ran" if run.error is None else f"\n❌ {run.error}"
+            print(_block(title, body, CYAN))
         print(_block("ANSWER", result.answer, GREEN))
 
 
