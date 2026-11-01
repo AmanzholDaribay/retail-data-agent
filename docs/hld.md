@@ -46,6 +46,46 @@ flowchart LR
 
 Everything in the diagram is built. The one gateway check not built is a second look at the returned rows (a known limit). `user → brands` is `users.yaml`.
 
+### Production (design only)
+
+The same agent, gateway and tools, packaged as a container on Google Cloud, next to the data in BigQuery and the Gemini models. The prototype's local pieces each map to a managed service: `--user` becomes company sign-in, the SQLite report store becomes a managed Postgres, `.env` keys move to a secret store, LangSmith becomes self-hosted Langfuse, and the AI Studio key becomes Vertex AI.
+
+```mermaid
+flowchart LR
+    user(["Manager or CEO<br/>browser"]) --> sso["Company sign-in<br/>Entra ID (OIDC)"]
+    sso --> run
+
+    subgraph gcp["Google Cloud project"]
+        run["Cloud Run<br/>agent container<br/>chat page · agent · tools · query gateway"]
+        run --> vertex["Vertex AI<br/>Gemini models + embeddings"]
+        run --> bq[("BigQuery<br/>thelook_ecommerce<br/>golden.trios")]
+        run --> sql[("Cloud SQL Postgres<br/>reports · preferences · user → brands")]
+        run --> secrets["Secret Manager<br/>keys, pseudonym salt"]
+
+        subgraph lf["Langfuse, self-hosted"]
+            lfweb["Langfuse web + worker<br/>containers"]
+            lfstore[("Postgres · ClickHouse<br/>Redis · Cloud Storage")]
+            lfweb --- lfstore
+        end
+        run -->|"traces, prompt fetch"| lfweb
+    end
+
+    admin(["Admin"]) -->|"edits prompts, reads traces"| lfweb
+    lfweb -.->|"alerts"| chat["Slack / PagerDuty"]
+```
+
+| Building block | Service | Why | Azure equivalent |
+|---|---|---|---|
+| Sign-in | The company's identity provider (e.g. Entra ID) over OIDC: opening the app redirects to the company login and back. The signed-in identity replaces `--user`. | One company login; no passwords in the app. | Entra ID |
+| Agent | **Cloud Run**: runs the agent container (chat page, agent loop, tools, query gateway) behind HTTPS, adds copies under load and scales to zero when idle. Stateless; conversation state in the checkpointer's database. | No servers to manage; the gateway stays inside the same container as the agent, so there is still one path to the data. | Azure Container Apps |
+| LLM | **Vertex AI**: the same Gemini models as AI Studio, with company billing, higher quotas, data kept in a chosen region and not used for training; also the embedding model for Golden Knowledge. Fallback between Gemini models as today. | Production terms for the model the prototype already uses. | Azure OpenAI / AI Foundry |
+| Data | **BigQuery**: the sales data, read only through the gateway with `maximum_bytes_billed`, plus the `golden.trios` table and its vector index. | The data is already there; no copy to keep in sync. | Synapse / Fabric |
+| App database | **Cloud SQL (Postgres)**: saved reports, user preferences, the user → brands access table (replacing `users.yaml`), and the conversation checkpoints. | Managed backups and failover; reports and preferences already have SQL schemas. | Azure Database for PostgreSQL |
+| Secrets | **Secret Manager**: API keys, database passwords, the pseudonym salt; read by the container at start. | Nothing secret in code or images. | Key Vault |
+| Observability, prompts, evaluation | **Langfuse, self-hosted**: its web and worker containers with its own Postgres, ClickHouse (traces), Redis and Cloud Storage, deployed from its official Helm chart or Docker Compose. The agent sends traces and fetches the production prompt; admins log in to edit prompts, read traces and run evaluations; alerts go to Slack or PagerDuty. | Traces, prompts, datasets, the LLM judge and alerts in one tool that stays inside the company. | Same containers on AKS or Container Apps |
+
+Everything sits in one Google Cloud project and region, so data, model and traces don't leave it. The same design runs on Azure with the services in the last column, except that the data would need to move out of BigQuery.
+
 ## Components
 
 | Component | Responsibility | Where | Status |
