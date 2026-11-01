@@ -1,3 +1,12 @@
+"""The main file: the one path from the agent to the database. Read `QueryGateway.run` top to bottom.
+
+    SQL ──▶ Step 1 guard ──▶ Step 2 personal data ──▶ Step 3 brand scope ──▶ Step 4 size ──▶ BigQuery
+               │                  │                        │                     │
+               └──────────────────┴──── any step can stop it with QueryRejected ─┘
+
+A stopped query never reaches the database. Its message goes back to the model, so it can fix the SQL and try again.
+"""
+
 import logging
 import time
 
@@ -36,12 +45,17 @@ class QueryGateway:
         logger.info("SQL: %s", sql)
         started = time.monotonic()
         try:
+            # Step 1: the guard. One SELECT that reads only the allowed tables.  -> step1_guard.py
             self._guard.check(sql)
+            # Step 2: personal data. Only columns listed in schema.yaml, no *.   -> step2_personal_data.py
             self._personal_data.check(sql)
+            # Step 3: brand scope. Rewrite the SQL so the user sees only their brands.  -> step3_brand_scope.py
             scoped_sql = self._scope.apply(sql)
             if scoped_sql != sql:
                 logger.info("Scoped SQL: %s", scoped_sql)
+            # Step 4: size. Stop the query before it scans more than max_bytes.  -> _check_bytes below
             self._check_bytes(scoped_sql)
+            # Every step passed: run the rewritten query, keeping at most max_rows rows.
             result = self._database.execute(scoped_sql, self._max_rows)
         except QueryRejected as error:
             logger.warning("SQL rejected: %s", error)

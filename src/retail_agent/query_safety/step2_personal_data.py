@@ -1,3 +1,26 @@
+"""Step 2 of 4: personal data. Step 1 asked "which tables?"; this asks "which columns?". It never changes the SQL.
+
+Like a guest list at a party: schema.yaml lists the columns that may be read. Personal columns (names, email,
+street address, postal code, latitude/longitude) were left off on purpose, so they can't be read, and nor can
+any column nobody thought to list.
+
+It checks 3 things, in this order:
+
+  1. Every column comes from schema.yaml.   ✅ SELECT status FROM orders    ❌ SELECT email FROM users
+  2. No `*`, except in COUNT(*).            ✅ COUNT(*)                     ❌ SELECT * FROM users
+  3. No whole rows used as a value.         ✅ SELECT u.id                  ❌ SELECT TO_JSON_STRING(u) FROM users u
+
+Rule 1 is done by sqlglot's `qualify`, which works out the real table behind every column name, in every part of
+the query: joins, subqueries and WITH queries too. A column it can't find in schema.yaml stops the query,
+wherever it is written:
+
+    WITH people AS (SELECT email AS contact FROM users) SELECT contact FROM people
+                           └── users.email is not in schema.yaml ──▶ ❌, even though the outer query says `contact`
+
+`qualify` also relabels `u` in TO_JSON_STRING(u) as a whole row (exp.TableColumn), which is what rule 3
+looks for. So rule 1 must run first.
+"""
+
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import OptimizeError

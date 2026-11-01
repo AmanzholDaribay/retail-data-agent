@@ -1,7 +1,38 @@
-"""Limits a SQL query to the user's brands, by swapping every table it reads for a version filtered to those brands.
+"""Step 3 of 4: brand scope. The only step that changes the SQL.
 
-`BrandScope.apply(sql)` returns the rewritten SQL as a string (the same string for a user who sees every brand),
-or raises QueryRejected when a table can't be limited.
+Each real table in the query is swapped for a filtered copy that holds only the user's brands, so the model's
+SQL can't see other brands' rows, whatever it wrote. Like handing someone a filing cabinet that holds only
+their own folders: they count with the same words, but they can only count their own folders.
+
+`BrandScope.apply(sql)` does it in 5 steps:
+
+  1. A user who sees every brand (the CEO): return the SQL unchanged.
+  2. Parse the SQL into a tree.
+  3. Swap every real table for its filtered copy:  `...thelook_ecommerce.products`  ->  _brand_scoped_products
+     (WITH names the model made are skipped; a table we can't filter stops the query.)
+  4. Add the 4 filtered copies at the front of the query's WITH clause.
+  5. Turn the tree back into SQL text.
+
+For a Levi's manager, the model's query
+
+    SELECT p.brand, SUM(oi.sale_price) FROM `...order_items` AS oi JOIN `...products` AS p ON oi.product_id = p.id ...
+
+runs as
+
+    WITH _brand_scoped_products AS (... WHERE brand IN ('Levi\\'s')), _brand_scoped_order_items AS (...), ...
+    SELECT p.brand, SUM(oi.sale_price) FROM _brand_scoped_order_items AS oi JOIN _brand_scoped_products AS p ...
+
+How the copies are filtered: only products has a brand, so the others follow IDs back to it, like a chain:
+
+    products     WHERE brand IN (the user's brands)
+       │ id
+    order_items  WHERE product_id IN (my products)
+       │ order_id                  │ user_id
+    orders       (orders holding    users  (people who bought
+                  my items)                 my items)
+
+The copies use `*` although step 2 forbids it: step 2 checks the model's SQL, and these copies are our own.
+The model's outer query can still name only schema.yaml columns.
 """
 
 from collections.abc import Set

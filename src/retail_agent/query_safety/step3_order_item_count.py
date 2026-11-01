@@ -1,7 +1,13 @@
-"""Keeps `orders.num_of_item` from counting other brands' items, for a user who sees only some brands.
+"""Part of step 3: keeps `orders.num_of_item` from counting other brands' items, for a user who sees only some brands.
 
-`orders_columns_with_scoped_item_count(...)` returns the SELECT list for the brand-filtered orders table: every
-column as it is, except `num_of_item`, which becomes the number of the user's own brands' items in that order.
+`num_of_item` is stored on the order and counts every item in it. Showing it as stored would tell a Levi's manager
+that an order also holds Nike items:
+
+    stored:     order 42 -> num_of_item = 3   (1 Levi's + 2 Nike)
+    rewritten:  order 42 -> num_of_item = 1   (only the Levi's manager's own items)
+
+`orders_columns_with_scoped_item_count(...)` returns the SELECT list for the brand-filtered orders table:
+`* REPLACE (...)`, meaning "every column as it is, but replace num_of_item with a fresh count of my items".
 """
 
 

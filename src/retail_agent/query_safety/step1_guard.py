@@ -1,3 +1,20 @@
+"""Step 1 of 4: the guard. It only reads the SQL and never changes it.
+
+Like a librarian at the reading-room door, it checks 4 things in order and stops at the first one that fails:
+
+  1. Exactly one statement.                          ❌ SELECT 1; DROP TABLE orders
+  2. A SELECT (or a UNION of SELECTs), nothing else. ❌ DELETE FROM orders
+  3. Real tables, not table functions.               ❌ FROM ML.PREDICT(...)
+  4. Only the allowed tables.                        ❌ FROM other_project.secrets.salaries
+
+SQL that sqlglot can't parse is stopped too: a query we can't read is a query we can't check.
+
+WITH names are skipped. In `WITH big_orders AS (SELECT ... FROM orders) SELECT ... FROM big_orders`,
+`big_orders` is a temporary table the query makes for itself, not a real one. The real table inside it
+(`orders`) is still checked. Only one-part names count, so a WITH name spelled like a full table path
+can't hide that real table elsewhere in the query.
+"""
+
 from collections.abc import Sequence
 
 import sqlglot
