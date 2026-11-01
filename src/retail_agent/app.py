@@ -9,15 +9,15 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from retail_agent.agent import BUDGET_REACHED, build_agent
-from retail_agent.brand_scope import BrandScope
 from retail_agent.config import Settings
 from retail_agent.db.base import Database
 from retail_agent.db.bigquery import BigQueryDatabase
-from retail_agent.gateway import QueryGateway
-from retail_agent.guard import QueryGuard
-from retail_agent.pii import PersonalDataCheck
 from retail_agent.llm import build_model
 from retail_agent.observability import LlmCallLogger
+from retail_agent.query_safety.gateway import QueryGateway
+from retail_agent.query_safety.step1_guard import QueryGuard
+from retail_agent.query_safety.step2_personal_data import PersonalDataCheck
+from retail_agent.query_safety.step3_brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
 from retail_agent.tools import make_run_sql
 from retail_agent.users import User

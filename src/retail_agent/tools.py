@@ -1,7 +1,7 @@
 from langchain_core.tools import BaseTool, tool
 
 from retail_agent.db.base import QueryError
-from retail_agent.gateway import QueryGateway
+from retail_agent.query_safety.gateway import QueryGateway
 from retail_agent.result_format import format_result
 
 

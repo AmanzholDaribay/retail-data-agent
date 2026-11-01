@@ -1,10 +1,10 @@
 import logging
 import time
 
-from retail_agent.brand_scope import BrandScope
 from retail_agent.db.base import Database, QueryResult
-from retail_agent.guard import QueryGuard, QueryRejected
-from retail_agent.pii import PersonalDataCheck
+from retail_agent.query_safety.step1_guard import QueryGuard, QueryRejected
+from retail_agent.query_safety.step2_personal_data import PersonalDataCheck
+from retail_agent.query_safety.step3_brand_scope import BrandScope
 
 logger = logging.getLogger(__name__)
 

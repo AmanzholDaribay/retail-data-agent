@@ -5,9 +5,9 @@ from harness import ORDER_ITEMS, PRODUCTS, assemble_app
 from langchain_core.messages import AIMessage
 from sqlglot import exp
 
-from retail_agent.brand_scope import SCOPED_PREFIX, BrandScope
 from retail_agent.db.base import QueryResult
-from retail_agent.guard import QueryRejected, is_with_name
+from retail_agent.query_safety.step1_guard import QueryRejected, is_with_name
+from retail_agent.query_safety.step3_brand_scope import SCOPED_PREFIX, BrandScope
 from retail_agent.users import User
 
 DATASET = "bigquery-public-data.thelook_ecommerce"

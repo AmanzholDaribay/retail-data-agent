@@ -9,8 +9,8 @@ from collections.abc import Set
 import sqlglot
 from sqlglot import exp
 
-from retail_agent.guard import QueryRejected, is_with_name, qualified_name
-from retail_agent.order_item_count import orders_columns_with_scoped_item_count
+from retail_agent.query_safety.step1_guard import QueryRejected, is_with_name, qualified_name
+from retail_agent.query_safety.step3_order_item_count import orders_columns_with_scoped_item_count
 
 # Our filtered tables get this prefix, so they can't be confused with WITH names the model writes.
 # If the model uses one of these names anyway, BigQuery rejects the duplicate name: the query fails, it doesn't leak.

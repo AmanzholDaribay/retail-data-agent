@@ -3,7 +3,7 @@ from sqlglot import exp
 from sqlglot.errors import OptimizeError
 from sqlglot.optimizer.qualify import qualify
 
-from retail_agent.guard import QueryRejected
+from retail_agent.query_safety.step1_guard import QueryRejected
 from retail_agent.schema import Schema
 
 
