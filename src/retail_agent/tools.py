@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
@@ -5,7 +7,7 @@ from langchain_core.tools import BaseTool, tool
 from retail_agent.agent import current_turn
 from retail_agent.db.base import QueryError
 from retail_agent.query_safety.gateway import QueryGateway
-from retail_agent.reports import ReportStore
+from retail_agent.reports import ReportStore, SavedReport
 from retail_agent.result_format import format_result
 
 
@@ -55,3 +57,32 @@ def make_save_report(store: ReportStore, owner: str) -> BaseTool:
         return f"{report}\n\n(Saved as report {report_id}: {title}.)"
 
     return save_report
+
+
+def make_list_reports(store: ReportStore, owner: str) -> BaseTool:
+    # return_direct: the list is the answer, so listing costs one LLM call.
+    @tool(return_direct=True)
+    def list_reports(runtime: ToolRuntime, mentioning: str = "", this_conversation: bool = False) -> str:
+        """List the user's saved reports: id, date and title, newest first. Its result is your answer.
+
+        mentioning: only reports whose title, question or text contain this, e.g. "Client X". Empty for all.
+        this_conversation: only reports made in this conversation."""
+        # The owner and the conversation come from the code, so the model can't list someone else's reports.
+        conversation_id = runtime.config["configurable"]["thread_id"]
+        reports = store.find(
+            owner, mentioning=mentioning or None, conversation_id=conversation_id if this_conversation else None
+        )
+        which = (f" mentioning '{mentioning}'" if mentioning else "") + (" from this conversation" if this_conversation else "")
+        if not reports:
+            return f"No saved reports{which}."
+        lines = [_describe(report, conversation_id) for report in reports]
+        return f"Your saved reports{which} ({len(reports)}):\n" + "\n".join(lines)
+
+    return list_reports
+
+
+def _describe(report: SavedReport, conversation_id: str) -> str:
+    """E.g. `3 · 2026-11-01 16:11 UTC · Q1 2026 report (this conversation)`."""
+    created = datetime.fromisoformat(report.created_at).strftime("%Y-%m-%d %H:%M UTC")
+    here = " (this conversation)" if report.conversation_id == conversation_id else ""
+    return f"{report.id} · {created} · {report.title}{here}"

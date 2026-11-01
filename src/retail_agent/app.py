@@ -22,7 +22,7 @@ from retail_agent.query_safety.step2_personal_data.small_groups import SmallGrou
 from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
 from retail_agent.reports import ReportStore
-from retail_agent.tools import make_run_sql, make_save_report
+from retail_agent.tools import make_list_reports, make_run_sql, make_save_report
 from retail_agent.users import User
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def assemble(
     reports = ReportStore(settings.reports_path)
     agent = build_agent(
         model,
-        [make_run_sql(gateway), make_save_report(reports, user.name)],
+        [make_run_sql(gateway), make_save_report(reports, user.name), make_list_reports(reports, user.name)],
         system_prompt,
         settings.max_llm_calls,
         checkpointer=InMemorySaver(),

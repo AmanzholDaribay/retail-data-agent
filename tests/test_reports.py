@@ -113,3 +113,93 @@ def test_the_store_creates_its_folder_and_table_when_missing(tmp_path):
 
     assert report_id == 1
     assert saved_rows(path)[0]["owner"] == "ceo"
+
+
+def list_reports_call(**args) -> AIMessage:
+    return AIMessage(content="", tool_calls=[{"name": "list_reports", "args": args, "id": "call_list"}])
+
+
+def save(store: ReportStore, owner: str, title: str, report: str = "text", conversation_id: str = "old") -> int:
+    return store.save(
+        owner=owner, conversation_id=conversation_id, question="Create a report", sql=[], title=title, report=report
+    )
+
+
+def test_a_user_never_sees_another_users_reports(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "CEO's Brazil report", report="Brazil grew")
+    save(store, "levis_manager", "Levi's Brazil report", report="Brazil grew")
+
+    assert [report.title for report in store.find("ceo", mentioning="Brazil")] == ["CEO's Brazil report"]
+
+
+def test_mentioning_searches_title_question_and_text_ignoring_case(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Client X review")
+    store.save(owner="ceo", conversation_id="old", question="report on client x", sql=[], title="Q2", report="r")
+    save(store, "ceo", "Q3", report="Notes about CLIENT X")
+    save(store, "ceo", "Unrelated")
+
+    assert [report.title for report in store.find("ceo", mentioning="client x")] == ["Q3", "Q2", "Client X review"]
+
+
+def test_percent_and_underscore_in_the_search_are_taken_literally(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Margin up 5%")
+    save(store, "ceo", "Margin up 50 points")
+
+    assert [report.title for report in store.find("ceo", mentioning="5%")] == ["Margin up 5%"]
+    assert store.find("ceo", mentioning="_") == []
+
+
+def test_finding_without_a_report_file_creates_nothing(tmp_path):
+    path = tmp_path / "reports.sqlite3"
+
+    assert ReportStore(path).find("ceo") == []
+    assert not path.exists()
+
+
+def test_show_my_reports_lists_this_conversations_reports_in_one_call(tmp_path):
+    path = tmp_path / "reports.sqlite3"
+    save(ReportStore(path), "ceo", "From an earlier run")
+    model = ScriptedChatModel(
+        script=[two_queries_at_once(), save_report_call("Q1 report"), list_reports_call(this_conversation=True)]
+    )
+    app = assemble_app(model, two_results(), reports_path=path)
+    app.ask("Create a Q1 report")
+
+    result = app.ask("What reports did we make in this conversation?")
+
+    assert len(model.received) == 3  # the list itself is the answer: 1 call for the second question
+    assert "2 · " in result.answer and "Q1 report (this conversation)" in result.answer
+    assert "From an earlier run" not in result.answer
+
+
+def test_an_empty_search_says_so(tmp_path):
+    model = ScriptedChatModel(script=[list_reports_call(mentioning="Brazil")])
+
+    result = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3").ask("Reports on Brazil?")
+
+    assert result.answer == "No saved reports mentioning 'Brazil'."
+
+
+def test_a_reports_file_without_the_table_lists_nothing(tmp_path):
+    path = tmp_path / "reports.sqlite3"
+    path.touch()
+
+    assert ReportStore(path).find("ceo") == []
+
+
+def test_mentioning_ignores_case_beyond_ascii(tmp_path):
+    store = ReportStore(tmp_path / "reports.sqlite3")
+    save(store, "ceo", "Ümraniye stores")
+
+    assert [report.title for report in store.find("ceo", mentioning="ümraniye")] == ["Ümraniye stores"]
+
+
+def test_the_header_names_both_filters(tmp_path):
+    model = ScriptedChatModel(script=[list_reports_call(mentioning="Brazil", this_conversation=True)])
+
+    result = assemble_app(model, FakeDatabase([]), reports_path=tmp_path / "reports.sqlite3").ask("Brazil reports here?")
+
+    assert result.answer == "No saved reports mentioning 'Brazil' from this conversation."

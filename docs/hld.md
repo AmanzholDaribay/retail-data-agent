@@ -131,7 +131,7 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 ## Reports and deletion
 
 - Asked for a report (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs, sending independent queries together as parallel tool calls to stay within the call budget, then writes findings, insights and action items.
-- Reports are saved to a local SQLite store (`REPORTS_PATH`) with owner, conversation id, creation time, the question, the SQL behind it and the report text, through a `save_report` tool whose result is the final answer (no extra LLM call). The owner and conversation come from the code, not the model. Built; listing and deletion are planned.
+- Reports are saved to a local SQLite store (`REPORTS_PATH`) with owner, conversation id, creation time, the question, the SQL behind it and the report text, through a `save_report` tool whose result is the final answer (no extra LLM call). The owner and conversation come from the code, not the model. Built. A `list_reports` tool lists the asking user's reports (owner filtered in the SQL), optionally those mentioning some text or made in this conversation; built. Deletion is planned.
 - Deletion selects reports by content ("delete all reports mentioning Client X") or by conversation ("delete all the reports we made in this conversation").
 - The model can only propose a deletion. Code shows the exact list and waits for explicit typed confirmation (a LangGraph interrupt) inside the chat, then hard-deletes. Cancelling leaves everything as it was and the chat continues.
 
