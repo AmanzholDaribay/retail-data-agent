@@ -160,7 +160,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       <li><span>A library called <b>sqlglot</b> reads the SQL text and builds a tree: one labelled box (a <i>node</i>) per piece, such as <code>Select</code>, <code>Star</code> (<code>*</code>), <code>Column</code> and <code>Table</code>.</span></li>
       <li><span>Our checks walk that tree and ask questions such as "is every table one of the 4?" or "is there a <code>*</code> that isn't inside <code>COUNT</code>?".</span></li>
       <li><span>A "no" calls <code>raise</code>: Python stops right there, the AI gets an <code>Error: …</code> message, and BigQuery is never called.</span></li>
-      <li><span>The checks only <i>read</i> the tree. The text that goes to BigQuery is the AI's own text (rewritten only by brand scoping, for brand managers).</span></li>
+      <li><span>The checks only <i>read</i> the tree. The text that goes to BigQuery is the AI's own text, rewritten in two places: customer ids become pseudonyms (for everyone), and tables are filtered to the user's brands (for brand managers).</span></li>
     </ol>
   </section>
 
@@ -251,30 +251,35 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       </div>
       <div class="arrow"></div>
       <div class="box is-ok step">
-        <span class="q">3. Is every Table node a real table, and one of the 4 allowed?</span><span class="verdict">✅ users</span>
+        <span class="q">3. Any query parameter or system variable (<code>@name</code>, <code>?</code>, <code>@@name</code>)?</span><span class="verdict">✅ none</span>
+        <span class="where">step1_guard.py · _reject_parameters</span>
+      </div>
+      <div class="arrow"></div>
+      <div class="box is-ok step">
+        <span class="q">4. Is every Table node a real table, and one of the 4 allowed?</span><span class="verdict">✅ users</span>
         <span class="where">step1_guard.py · _reject_table_function, _require_allowed_table</span>
       </div>
       <div class="arrow"></div>
       <div class="box is-ok step">
-        <span class="q">4. Does every named column trace back to schema.yaml?</span><span class="verdict">✅ none named</span>
+        <span class="q">5. Does every named column trace back to schema.yaml?</span><span class="verdict">✅ none named</span>
         <span class="where">step2_personal_data/columns.py · _require_schema_columns · qualify(…, expand_stars=False)</span>
-        <span class="why">There are no Column nodes at all, so there is nothing to fail. This check alone would miss <code>*</code>, which is why question 5 exists.</span>
+        <span class="why">There are no Column nodes at all, so there is nothing to fail. This check alone would miss <code>*</code>, which is why question 6 exists.</span>
       </div>
       <div class="arrow"></div>
       <div class="box is-bad step">
-        <span class="q">5. Is there a Star whose parent isn't Count?</span><span class="verdict">❌ yes: raise</span>
+        <span class="q">6. Is there a Star whose parent isn't Count?</span><span class="verdict">❌ yes: raise</span>
         <span class="where">step2_personal_data/columns.py · _reject_select_star</span>
         <span class="why">The AI gets: <code>Error: Name the columns you need instead of using *. COUNT(*) is fine.</code></span>
       </div>
       <div class="arrow stop">skipped</div>
       <div class="box skipped step">
-        <span class="q">6. Any whole row used as a value (e.g. <code>TO_JSON_STRING(u)</code>)?</span><span class="verdict">never asked</span>
+        <span class="q">7. Any whole row used as a value (e.g. <code>TO_JSON_STRING(u)</code>)?</span><span class="verdict">never asked</span>
         <span class="where">step2_personal_data/columns.py · _reject_whole_rows</span>
       </div>
       <div class="arrow stop">skipped</div>
       <div class="box skipped step">
-        <span class="q">Brand scope rewrite → byte-limit dry run → BigQuery runs it</span><span class="verdict">never reached</span>
-        <span class="where">step3_brand_scope/brand_scope.py · gateway.py · db/</span>
+        <span class="q">Customer pseudonyms → brand scope rewrite → byte-limit dry run → BigQuery runs it</span><span class="verdict">never reached</span>
+        <span class="where">step2_personal_data/customer_pseudonyms.py · step3_brand_scope/brand_scope.py · gateway.py · db/</span>
       </div>
     </div>
     <p>The AI reads the error and sends <code>SELECT id, age, gender, city, state, country, traffic_source, created_at FROM users LIMIT 3</code>. That has no Star and only schema columns, so it passes all of them. (In the live run on 2026-10-31, the AI named those 8 columns on its first try, because the prompt asks it to.)</p>
@@ -285,15 +290,15 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
 <pre><span class="c"># step2_personal_data/columns.py: check() reads like a checklist, one named rule per line</span>
 def check(self, sql):
     statement = sqlglot.parse_one(sql, read=self._dialect)   <span class="c"># text → tree</span>
-    self._require_schema_columns(statement)                  <span class="c"># Q4: trace each column; keep * as written</span>
-<span class="hit">    _reject_select_star(statement)</span>                           <span class="c"># Q5: stops SELECT * here</span>
-    _reject_whole_rows(statement)                            <span class="c"># Q6: a table used as a value</span>
+    self._require_schema_columns(statement)                  <span class="c"># Q5: trace each column; keep * as written</span>
+<span class="hit">    _reject_select_star(statement)</span>                           <span class="c"># Q6: stops SELECT * here</span>
+    _reject_whole_rows(statement)                            <span class="c"># Q7: a table used as a value</span>
 
 def _reject_select_star(statement):
     for star in statement.find_all(exp.Star):                <span class="c"># every * anywhere in the tree</span>
         if not isinstance(star.parent, exp.Count):           <span class="c"># the box directly above it</span>
 <span class="hit">            raise QueryRejected("Name the columns you need …")</span>  <span class="c"># stop here</span></pre>
-    <p class="note"><code>raise</code> means "stop this function now and jump out with an error". In <code>gateway.run</code>, every line after the check (brand scope, byte check, <code>database.execute</code>) is skipped, and the message goes back to the AI as <code>Error: …</code>.</p>
+    <p class="note"><code>raise</code> means "stop this function now and jump out with an error". In <code>gateway.run</code>, every line after the check (customer pseudonyms, brand scope, byte check, <code>database.execute</code>) is skipped, and the message goes back to the AI as <code>Error: …</code>.</p>
   </section>
 
   <section>
@@ -303,7 +308,7 @@ def _reject_select_star(statement):
       <div class="box is-bad">
         <h3>Expansion on (the library default)</h3>
         <ul>
-          <li>The tree becomes <code>SELECT id, age, city, …</code>. No Star is left, so question 5 finds nothing.</li>
+          <li>The tree becomes <code>SELECT id, age, city, …</code>. No Star is left, so question 6 finds nothing.</li>
           <li>The check passes ✅, but BigQuery still runs the text <code>SELECT *</code> and returns email ❌.</li>
         </ul>
       </div>
@@ -311,7 +316,7 @@ def _reject_select_star(statement):
         <h3>Expansion off (what we do)</h3>
         <ul>
           <li>The tree keeps its <code>Star</code>, exactly as the AI wrote it.</li>
-          <li>Question 5 sees it and stops the query before BigQuery.</li>
+          <li>Question 6 sees it and stops the query before BigQuery.</li>
         </ul>
       </div>
     </div>
@@ -328,14 +333,17 @@ def _reject_select_star(statement):
           <tr><td class="n">1</td><td>Can it be parsed at all? If not, we can't check it, so it doesn't run.</td><td class="sql">SELECT FROM WHERE</td><td class="msg">The query could not be parsed, so it was not run. Simplify it.</td></tr>
           <tr><td class="n">2</td><td>Exactly one statement?</td><td class="sql">SELECT 1 …; DROP TABLE …</td><td class="msg">Send one statement per query.</td></tr>
           <tr><td class="n">3</td><td>Is the top node a query (SELECT or UNION of SELECTs)?</td><td class="sql">DELETE FROM users WHERE TRUE</td><td class="msg">Only SELECT queries are allowed.</td></tr>
-          <tr><td class="n">4</td><td>Is every Table node a plain name, not a function?</td><td class="sql">SELECT * FROM ML.PREDICT(…)</td><td class="msg">Read only from tables. Table functions such as ML.PREDICT are not allowed.</td></tr>
-          <tr><td class="n">5</td><td>Is every Table one of the 4 allowed? (A one-part name the query defines with <code>WITH</code> is skipped.)</td><td class="sql">SELECT ip_address FROM events</td><td class="msg">Table `…events` is not allowed. Use only these tables: …</td></tr>
+          <tr><td class="n">4</td><td>Any query parameter or system variable? Our own SQL sends the pseudonym salt as <code>@pseudonym_salt</code>, so the AI must not be able to read one.</td><td class="sql">SELECT @pseudonym_salt<br>SELECT @@project_id</td><td class="msg">Query parameters and system variables (@name, ?, @@name) are not allowed. Write values into the SQL.</td></tr>
+          <tr><td class="n">5</td><td>Is every Table node a plain name, not a function?</td><td class="sql">SELECT * FROM ML.PREDICT(…)</td><td class="msg">Read only from tables. Table functions such as ML.PREDICT are not allowed.</td></tr>
+          <tr><td class="n">6</td><td>Is every Table one of the 4 allowed? (A one-part name the query defines with <code>WITH</code> is skipped.)</td><td class="sql">SELECT ip_address FROM events</td><td class="msg">Table `…events` is not allowed. Use only these tables: …</td></tr>
           <tr class="group is-bad"><td colspan="4">step2_personal_data/columns.py · which columns (personal data)</td></tr>
-          <tr><td class="n">6</td><td>Does every column trace back, through aliases, joins, subqueries and WITH, to a column in schema.yaml? Is it clear which table it's from?</td><td class="sql">SELECT email FROM users<br>SELECT gender FROM users u JOIN orders o …</td><td class="msg">Read only the columns listed in the schema. When a column is in two joined tables, prefix it with the table alias. (Column 'email' could not be resolved.)</td></tr>
-          <tr><td class="n">7</td><td>Is there a Star whose parent isn't Count?</td><td class="sql">SELECT * FROM users<br>SELECT u.* …<br>SELECT * EXCEPT (id) …</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
-          <tr><td class="n">8</td><td>Is a whole table row used as a value (a TableColumn node)?</td><td class="sql">SELECT u FROM users u<br>TO_JSON_STRING(u)</td><td class="msg">Select columns, not whole rows: `u` is a table, not a column.</td></tr>
-          <tr class="group is-ours"><td colspan="4">step3_brand_scope/brand_scope.py · rewrites the tree (brand managers only; the CEO's SQL is unchanged)</td></tr>
-          <tr><td class="n">9</td><td>Swap every Table node for a filtered copy (<code>_brand_scoped_users</code> …) and put those copies in the WITH clause at the front. The tree is turned back into text, and <b>that</b> text runs.</td><td class="sql">FROM users<br>→ FROM _brand_scoped_users AS users</td><td class="msg">Nothing; the AI isn't told. A table with no brand filter is stopped: "can't be limited to your brands".</td></tr>
+          <tr><td class="n">7</td><td>Does every column trace back, through aliases, joins, subqueries and WITH, to a column in schema.yaml? Is it clear which table it's from?</td><td class="sql">SELECT email FROM users<br>SELECT gender FROM users u JOIN orders o …</td><td class="msg">Read only the columns listed in the schema. When a column is in two joined tables, prefix it with the table alias. (Column 'email' could not be resolved.)</td></tr>
+          <tr><td class="n">8</td><td>Is there a Star whose parent isn't Count?</td><td class="sql">SELECT * FROM users<br>SELECT u.* …<br>SELECT * EXCEPT (id) …</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
+          <tr><td class="n">9</td><td>Is a whole table row used as a value (a TableColumn node)?</td><td class="sql">SELECT u FROM users u<br>TO_JSON_STRING(u)</td><td class="msg">Select columns, not whole rows: `u` is a table, not a column.</td></tr>
+          <tr class="group is-ours"><td colspan="4">step2_personal_data/customer_pseudonyms.py · rewrites the tree (every user, the CEO too)</td></tr>
+          <tr><td class="n">10</td><td>Swap each customer table the query reads (<code>users</code>, <code>orders</code>, <code>order_items</code>) for a copy whose customer id is a salted hash, and put those copies in the WITH clause at the front. BigQuery builds the copies while the query runs, so the AI's SQL only ever sees pseudonyms.</td><td class="sql">FROM users<br>→ FROM _pseudonymized_users AS users</td><td class="msg">Nothing; the AI isn't told. It sees ids such as <code>cust_72ac84091163</code>, and a follow-up can filter on one.</td></tr>
+          <tr class="group is-ours"><td colspan="4">step3_brand_scope/brand_scope.py · rewrites the tree (brand managers only; a user with every brand skips it)</td></tr>
+          <tr><td class="n">11</td><td>Swap every Table node for a filtered copy (<code>_brand_scoped_users</code> …) and put those copies in the WITH clause at the front. The tree is turned back into text, and <b>that</b> text runs.</td><td class="sql">FROM users<br>→ FROM _brand_scoped_users AS users</td><td class="msg">Nothing; the AI isn't told. A table with no brand filter is stopped: "can't be limited to your brands".</td></tr>
         </tbody>
       </table>
     </div>
@@ -348,10 +356,10 @@ def _reject_select_star(statement):
   </div>
 
   <footer>
-    <div>Code: <code>QueryGuard.check</code> in <code>src/retail_agent/query_safety/step1_guard.py</code>; <code>PersonalDataCheck.check</code> in <code>src/retail_agent/query_safety/step2_personal_data/columns.py</code>; <code>BrandScope.apply</code> in <code>src/retail_agent/query_safety/step3_brand_scope/brand_scope.py</code>; called in that order by <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code>, wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
+    <div>Code: <code>QueryGuard.check</code> in <code>src/retail_agent/query_safety/step1_guard.py</code>; <code>PersonalDataCheck.check</code> in <code>src/retail_agent/query_safety/step2_personal_data/columns.py</code>; <code>CustomerPseudonyms.apply</code> in <code>src/retail_agent/query_safety/step2_personal_data/customer_pseudonyms.py</code>; <code>BrandScope.apply</code> in <code>src/retail_agent/query_safety/step3_brand_scope/brand_scope.py</code>; called in that order by <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code>, wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
     <div>Library: sqlglot 30.27 (<code>parse_one</code>, <code>find_all</code>, <code>optimizer.qualify.qualify</code>), BigQuery dialect.</div>
-    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step3_brand_scope.py</code>. Rejections are logged as <code>SQL rejected: …</code> in <code>logs/retail-agent.log</code>.</div>
-    <div>Ticket: <code>tasks/08-block-personal-data-columns.md</code>. Plan: step 2 and step 3 in <code>docs/plan.md</code>. See also <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
+    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Rejections are logged as <code>SQL rejected: …</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Tickets: <code>tasks/08-block-personal-data-columns.md</code>, <code>tasks/09-hash-customer-ids.md</code>. Plan: step 2 and step 3 in <code>docs/plan.md</code>. See also <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>.</div>
   </footer>
 
 </main>
