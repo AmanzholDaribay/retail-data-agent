@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQL Journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One reading column: one real question walks down a vertical path of numbered stations, each with its SQL, then back to the AI. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --ai: #a35a12;          /* what the AI writes and reads */
+  --ai-soft: #f8ecdf;
+  --check: #2c6b3f;       /* a check: reads the SQL, never changes it */
+  --check-soft: #e4f1e7;
+  --rewrite: #5b4f8a;     /* a rewrite: our code changes the SQL */
+  --rewrite-soft: #ece9f5;
+  --data: #2b5d8a;        /* BigQuery and the real tables */
+  --data-soft: #e2edf6;
+  --stop: #a3352b;        /* stopped: the query never reaches BigQuery */
+  --stop-soft: #f8e5e2;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --ai: #e7a464; --ai-soft: #3a2a1a; --check: #7fcf96; --check-soft: #1b3324;
+    --rewrite: #b3a8e6; --rewrite-soft: #28243d; --data: #82b6e3; --data-soft: #18293a;
+    --stop: #f08a7e; --stop-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --ai: #e7a464; --ai-soft: #3a2a1a; --check: #7fcf96; --check-soft: #1b3324;
+  --rewrite: #b3a8e6; --rewrite-soft: #28243d; --data: #82b6e3; --data-soft: #18293a;
+  --stop: #f08a7e; --stop-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--data); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; counter-increment: s; }
+.short li::before {
+  content: counter(s); width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font: 600 0.8rem/1 var(--font-mono);
+}
+
+/* the question */
+.ask { display: grid; gap: 4px; justify-items: start; }
+.bubble { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px 14px 14px 4px; padding: 10px 16px; font-size: 1.05rem; }
+.ask small { color: var(--muted); font-size: 0.85rem; }
+
+/* the path: numbered stations joined by arrows */
+.path { display: grid; gap: 0; }
+.station {
+  --k: var(--line); --k-soft: var(--surface);
+  border: 1.5px solid var(--k); border-left-width: 6px; background: var(--surface);
+  border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0;
+}
+.station.ai { --k: var(--ai); --k-soft: var(--ai-soft); }
+.station.check { --k: var(--check); --k-soft: var(--check-soft); }
+.station.rewrite { --k: var(--rewrite); --k-soft: var(--rewrite-soft); }
+.station.data { --k: var(--data); --k-soft: var(--data-soft); }
+.station .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.tag { font: 600 0.72rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--k); background: var(--k-soft); border-radius: 999px; padding: 5px 10px; }
+.station .file { font: 0.78rem/1.3 var(--font-mono); color: var(--muted); margin-left: auto; }
+.life { color: var(--muted); font-size: 0.9rem; }
+.checks { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.92rem; }
+.verdict { display: inline-block; font: 600 0.8rem/1 var(--font-mono); color: var(--k); }
+.exit { border: 1.5px dashed var(--stop); background: var(--stop-soft); color: var(--fg); border-radius: 8px; padding: 8px 12px; font-size: 0.86rem; }
+.exit b { color: var(--stop); }
+.exit code { white-space: normal; }
+.arrow { display: grid; justify-items: center; color: var(--muted); font: 0.78rem/1.2 var(--font-mono); padding: 4px 0; }
+.arrow::before { content: ""; height: 16px; border-left: 1.5px solid var(--line); }
+.arrow::after { content: "▼"; font-size: 0.7rem; color: var(--line); }
+
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--bg); border: 1.5px solid var(--line); overflow-x: auto; font: 0.8rem/1.6 var(--font-mono); }
+pre .c { color: var(--muted); }
+pre .add { background: var(--rewrite-soft); color: var(--rewrite); font-weight: 500; }
+pre .same { color: var(--muted); }
+
+/* the result */
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+td.mono { font-family: var(--font-mono); font-size: 0.82rem; }
+td.msg { color: var(--stop); font-size: 0.85rem; }
+
+/* rails */
+.rails { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.rail { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; }
+.rail .big { font: 700 1.8rem/1 var(--font-mono); }
+.rail p { color: var(--muted); font-size: 0.9rem; }
+
+.rule { border-left: 4px solid var(--fg); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; display: grid; gap: 6px; }
+
+footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .rails { grid-template-columns: 1fr; }
+  .station .file { margin-left: 0; flex-basis: 100%; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">retail data agent · query gateway · as of 2026-11-01</div>
+    <h1>What happens to the AI's SQL on its way to BigQuery?</h1>
+    <p class="lede">It passes through four steps in one file, <code>gateway.py</code>. Some steps only check the SQL. Two of them rewrite it, so what BigQuery runs is safer than what the AI wrote. Below, one real question goes all the way through. See also <a href="sql-parser-rules.html">every parser rule</a>, <a href="brand-scoping.html">brand scoping</a> and <a href="agent-loop.html">the agent loop</a>.</p>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--ai);background:var(--ai-soft)"></i>the AI</span>
+      <span><i class="sw" style="border-color:var(--check);background:var(--check-soft)"></i>a check: only reads the SQL</span>
+      <span><i class="sw" style="border-color:var(--rewrite);background:var(--rewrite-soft)"></i>a rewrite: changes the SQL</span>
+      <span><i class="sw" style="border-color:var(--data);background:var(--data-soft)"></i>BigQuery</span>
+      <span><i class="sw" style="border-color:var(--stop);background:var(--stop-soft)"></i>stopped here</span>
+    </div>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span><b>Checks first.</b> Is it a safe, single read of our 4 tables, using only allowed columns? If not, it stops, and the AI gets the reason so it can fix its SQL.</span></li>
+      <li><span><b>Then two rewrites.</b> Customer ids become nicknames like <code>cust_249e6e6fc97d</code>, and every table is cut down to the user's brands.</span></li>
+      <li><span><b>Then a free size check.</b> Anything that would scan more than 1 GB is stopped before it costs money.</span></li>
+      <li><span><b>Only then BigQuery runs it.</b> The rows go back to the AI, which writes the answer.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>One question, step by step</h2>
+    <div class="ask">
+      <div class="bubble">“Who are my top 3 customers?”</div>
+      <small>asked by the Levi's manager (<code>--user levis_manager</code>), who may see Levi's only</small>
+    </div>
+
+    <div class="path">
+
+      <div class="station ai">
+        <div class="head"><span class="tag">The AI writes SQL</span><span class="file">LLM → run_sql tool</span></div>
+        <p>It writes the obvious query over the real tables. No brand filter, no nicknames: it doesn't have to think about safety.</p>
+<pre>SELECT u.id, u.country, COUNT(DISTINCT o.order_id) AS orders
+FROM `…thelook_ecommerce.users` u
+JOIN `…thelook_ecommerce.orders` o ON o.user_id = u.id
+GROUP BY u.id, u.country
+ORDER BY orders DESC
+LIMIT 3</pre>
+      </div>
+      <div class="arrow"><span>gateway.run(sql)</span></div>
+
+      <div class="station check">
+        <div class="head"><span class="tag">Step 1 · Guard</span><span class="file">step1_guard.py</span></div>
+        <p class="life">🏠 Like a librarian at the door: one request slip, to <i>read</i>, from the shelves you're allowed.</p>
+        <ul class="checks">
+          <li><span class="verdict">✅</span> One statement, and it parses</li>
+          <li><span class="verdict">✅</span> A SELECT, nothing that changes data</li>
+          <li><span class="verdict">✅</span> No <code>@</code> variables (they could read our secret salt)</li>
+          <li><span class="verdict">✅</span> Only real tables, and only our 4: <code>users</code>, <code>orders</code></li>
+        </ul>
+        <div class="exit"><b>✕ Stopped if</b> e.g. <code>DELETE FROM orders</code> → AI is told <code>Only SELECT queries are allowed.</code></div>
+        <p class="note">The SQL is unchanged.</p>
+      </div>
+      <div class="arrow"></div>
+
+      <div class="station check">
+        <div class="head"><span class="tag">Step 2a · Personal-data columns</span><span class="file">step2_personal_data/columns.py</span></div>
+        <p class="life">🏠 Like a guest list: only columns written in <code>schema.yaml</code> get in. Names, email and addresses aren't on it.</p>
+        <ul class="checks">
+          <li><span class="verdict">✅</span> <code>id</code>, <code>country</code>, <code>order_id</code>, <code>user_id</code> are all on the list</li>
+          <li><span class="verdict">✅</span> No <code>*</code>, no whole rows</li>
+        </ul>
+        <div class="exit"><b>✕ Stopped if</b> e.g. <code>SELECT email …</code> → <code>Read only the columns listed in the schema.</code></div>
+        <p class="note">The SQL is unchanged.</p>
+      </div>
+      <div class="arrow"></div>
+
+      <div class="station rewrite">
+        <div class="head"><span class="tag">Step 2b · Customer pseudonyms</span><span class="file">step2_personal_data/customer_pseudonyms.py</span></div>
+        <p>The customer tables are swapped for copies where each real id is replaced by a nickname. BigQuery makes the copies itself while it runs, so the AI's part of the query only ever sees nicknames. This happens for every user, the CEO too.</p>
+        <p class="life">🏠 Like a coat check: you get ticket #72, never the hanger's location. Same coat, same ticket, every time.</p>
+<pre><span class="add">WITH _pseudonymized_users AS (</span>
+<span class="add">  SELECT * REPLACE (CONCAT('cust_', …SHA256(@pseudonym_salt + id)…) AS id)</span>  <span class="c">-- 48213 → cust_249e6e6fc97d</span>
+<span class="add">  FROM `…users` AS users),</span>
+<span class="add">_pseudonymized_orders AS ( …same for user_id… )</span>
+<span class="same">SELECT u.id, u.country, COUNT(DISTINCT o.order_id) AS orders</span>
+FROM <span class="add">_pseudonymized_users</span> AS u
+JOIN <span class="add">_pseudonymized_orders</span> AS o ON o.user_id = u.id   <span class="c">-- nickname = nickname, so the join still matches</span>
+<span class="same">GROUP BY u.id, u.country ORDER BY orders DESC LIMIT 3</span></pre>
+      </div>
+      <div class="arrow"></div>
+
+      <div class="station rewrite">
+        <div class="head"><span class="tag">Step 3 · Brand scope</span><span class="file">step3_brand_scope/brand_scope.py</span></div>
+        <p>Every real table, including the ones inside the nickname copies, is swapped for a copy that holds only Levi's rows. Customers and orders are kept only if they bought a Levi's product. The CEO sees every brand, so this step skips the CEO.</p>
+        <p class="life">🏠 Like handing someone a filing cabinet that holds only their own folders.</p>
+<pre><span class="add">WITH _brand_scoped_products AS (… WHERE brand IN ('Levi\'s')),</span>
+<span class="add">     _brand_scoped_order_items AS (… only Levi's products …),</span>
+<span class="add">     _brand_scoped_orders AS (… only orders with a Levi's item …),</span>
+<span class="add">     _brand_scoped_users  AS (… only people who bought Levi's …),</span>
+     _pseudonymized_users  AS (… FROM <span class="add">_brand_scoped_users</span> …),
+     _pseudonymized_orders AS (… FROM <span class="add">_brand_scoped_orders</span> …)
+<span class="same">SELECT … FROM _pseudonymized_users AS u JOIN _pseudonymized_orders AS o …</span></pre>
+        <div class="exit"><b>✕ Stopped if</b> a table has no brand rule → <code>Table … can't be limited to your brands, so the query was not run.</code></div>
+      </div>
+      <div class="arrow"></div>
+
+      <div class="station check">
+        <div class="head"><span class="tag">Step 4 · Size check</span><span class="file">gateway.py · _check_bytes</span></div>
+        <p>BigQuery is asked, for free, “how much would this read?” without running it (a <i>dry run</i>).</p>
+        <ul class="checks">
+          <li><span class="verdict">✅</span> 8.7 MB, under the 1 GB cap</li>
+        </ul>
+        <div class="exit"><b>✕ Stopped if</b> over 1 GB → <code>This query would scan 1.4 GB, over the 1.0 GB limit per query. Select fewer columns or filter on a narrower date range.</code></div>
+      </div>
+      <div class="arrow"><span>database.execute(sql, max_rows=50)</span></div>
+
+      <div class="station data">
+        <div class="head"><span class="tag">BigQuery runs it</span><span class="file">db/bigquery.py</span></div>
+        <p>It receives the full rewritten SQL, plus the secret salt sent <i>alongside</i> it as <code>@pseudonym_salt</code>, never written into the SQL text or the log. At most 50 rows come back.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>id</th><th>country</th><th>orders</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">cust_249e6e6fc97d</td><td>China</td><td>2</td></tr>
+              <tr><td class="mono">cust_267918d59c6e</td><td>Brasil</td><td>2</td></tr>
+              <tr><td class="mono">cust_34fed0dbdb6b</td><td>United States</td><td>2</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Real rows from a run on 2026-11-01. Order counts are Levi's orders only. The nicknames change when the salt changes.</p>
+      </div>
+      <div class="arrow"><span>rows → run_sql → back to the AI</span></div>
+
+      <div class="station ai">
+        <div class="head"><span class="tag">The AI answers</span><span class="file">LLM</span></div>
+        <p>It reads the three rows and writes the answer in plain words. If the user follows up with “what did the first one buy?”, the AI writes <code>WHERE user_id = 'cust_249e6e6fc97d'</code>, and the whole journey runs again: the copies are rebuilt the same way, so the nickname matches.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>What stops a query, and what the AI is told</h2>
+    <p>A stopped query never reaches BigQuery. The AI gets the message as <code>Error: …</code>, fixes its SQL and tries again, within its 5 LLM calls per question.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Step</th><th>The AI wrote</th><th>The AI is told</th></tr></thead>
+        <tbody>
+          <tr><td>1 · Guard</td><td class="mono">SELECT 1; DROP TABLE orders</td><td class="msg">Send one statement per query.</td></tr>
+          <tr><td>1 · Guard</td><td class="mono">DELETE FROM orders</td><td class="msg">Only SELECT queries are allowed.</td></tr>
+          <tr><td>1 · Guard</td><td class="mono">SELECT @pseudonym_salt</td><td class="msg">Query parameters and system variables (@name, ?, @@name) are not allowed. Write values into the SQL.</td></tr>
+          <tr><td>1 · Guard</td><td class="mono">FROM …thelook_ecommerce.events</td><td class="msg">Table `…events` is not allowed. Use only these tables: …</td></tr>
+          <tr><td>2a · Columns</td><td class="mono">SELECT email FROM users</td><td class="msg">Read only the columns listed in the schema. …</td></tr>
+          <tr><td>2a · Columns</td><td class="mono">SELECT * FROM users</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
+          <tr><td>3 · Brand scope</td><td class="mono">FROM …inventory_items</td><td class="msg">Table `…inventory_items` can't be limited to your brands, so the query was not run.</td></tr>
+          <tr><td>4 · Size</td><td class="mono">a query over 1 GB</td><td class="msg">This query would scan 1.4 GB, over the 1.0 GB limit per query. …</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Steps 2b and 3 never stop a normal query and never tell the AI anything: they quietly rewrite it.</p>
+  </section>
+
+  <section>
+    <h2>Limits on every query</h2>
+    <div class="rails">
+      <div class="rail"><div class="big">1 GB</div><h3>Scan cap</h3><p>Checked with a free dry run, and capped again by BigQuery itself (<code>maximum_bytes_billed</code>).</p></div>
+      <div class="rail"><div class="big">50</div><h3>Rows back</h3><p>At most 50 rows reach the AI; it's told when rows were cut off.</p></div>
+      <div class="rail"><div class="big">0</div><h3>Real customer ids</h3><p>The AI only ever sees <code>cust_…</code> nicknames, made from a secret salt it can't read.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>The AI writes plain SQL, the gateway checks it, then rewrites it for privacy and brands, and only that rewritten SQL reaches BigQuery.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Code: <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code> calls, in order, <code>QueryGuard.check</code> (<code>step1_guard.py</code>), <code>PersonalDataCheck.check</code> (<code>step2_personal_data/columns.py</code>), <code>CustomerPseudonyms.apply</code> (<code>step2_personal_data/customer_pseudonyms.py</code>), <code>BrandScope.apply</code> (<code>step3_brand_scope/brand_scope.py</code>), <code>_check_bytes</code>, then <code>BigQueryDatabase.execute</code> (<code>src/retail_agent/db/bigquery.py</code>). Wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
+    <div>Settings: <code>MAX_BYTES_BILLED</code> (1 GB), <code>MAX_ROWS</code> (50), <code>PSEUDONYM_SALT</code>, <code>USERS_PATH</code>. The original and rewritten SQL are logged as <code>SQL:</code> and <code>Rewritten SQL:</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Tickets: 08 (columns), 09 (pseudonyms).</div>
+    <div>See also <a href="sql-parser-rules.html">SQL parser rules</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="order-item-count.html">order item count</a>, <a href="sql-errors.html">SQL errors</a>, <a href="architecture.html">architecture</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>
