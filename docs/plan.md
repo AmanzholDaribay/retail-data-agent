@@ -1,6 +1,6 @@
 # Initial plan: Retail data agent (OpsFleet assignment)
 
-Status: steps 1 and 2 done (2026-10-31); step 3 in progress: `--user`, brand scoping (including the `num_of_item` recount) and the column allow-list that blocks personal data (ticket 08) and pseudonymous customer ids (ticket 09, 2026-11-01) and demographics only in totals of 5+ customers (ticket 10, 2026-11-01) are built; the check on returned rows is left. Step 5 done 2026-11-01: creating and saving a report (ticket 11), listing your own reports (ticket 12) and deleting them after a typed yes (ticket 13). Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early, after briefly being dropped, because the client named it as the default; LangSmith is just configuration (step 6). The build work left is the step 3 row check, BigQuery retries (step 4) and trace context (step 6); then the docs (step 7). Last updated 2026-11-01.
+Status: **build frozen on 2026-11-01; only docs and demo prep are left**, in the order given in [Final phase: docs and demo](#final-phase-docs-and-demo). Steps 1, 2 and 5 are done. Steps 3, 4 and 6 are done apart from three items that became known limits (the check on returned rows, BigQuery retries, the startup schema check). Ticket 15 (`--verbose` SQL outcomes) is built and committed. Step 1 was trimmed on 2026-10-30 to leave time for the parts graded most. On 2026-10-31 the Gemini model fallback (step 4) was built early because the client named it as the default. Last updated 2026-11-01.
 
 ## How we build
 
@@ -149,7 +149,7 @@ Lives inside the gateway. This is the most heavily graded part.
 
 - Identity: the user is chosen at CLI start (e.g. `--user`). A config file maps users to brands, and the CEO gets all brands. **Built 2026-10-31:** `--user` (required) picks a name from `users.yaml` (`USERS_PATH`), where each user has a list of brands or `all`. `users.py` loads it with pydantic, so a bad file (an empty list, a single name instead of a list, a typo in a key) or an unknown user stops the CLI at startup with a clear message. `assemble` turns the user's brands into the `BrandScope` the `QueryGateway` applies to every query (next bullet). `--user` stands in for real sign-in, which in production would come from the company's SSO.
 - Scoping is enforced in the data layer, not the prompt. Table references are rewritten to brand-filtered versions, so orders and users are reachable only through in-scope products. **Decided and built 2026-10-31: rewrite the SQL** ([brand-scoping.html](brand-scoping.html)). `query_safety/step3_brand_scope/brand_scope.py` (`BrandScope.apply`) runs in the gateway right after the guard. It swaps every table in the parsed query for a filtered version (`_brand_scoped_products` keeps only the user's brands; `order_items`, `orders` and `users` keep rows linked to those products) and puts those filtered tables first in the query's WITH clause. The CEO's queries run unchanged. Scoped views were put aside: they need datasets and views set up in a GCP project, kept in step with `users.yaml`, and they can't be tested offline. **Fixed 2026-10-31:** `orders.num_of_item` counted every item in an order, other brands' items too. For a brand manager it is now recounted from their own items (`query_safety/step3_brand_scope/order_item_count.py`, [order-item-count.html](order-item-count.html)); blocking the column was dropped because `SELECT *` uses it without naming it.
-- PII columns are tagged in `schema.yaml`, resolved from the parsed query rather than matched by name, and blocked. Results are checked again before rows reach the model. **Decided and built 2026-10-31** ([ticket 08](../tasks/08-block-personal-data-columns.md)): an allow-list instead of tags. Only columns listed in `schema.yaml` can be read, so a personal column nobody tagged is blocked anyway. The check lives in a new `query_safety/step2_personal_data/columns.py`, called by the gateway right after the guard. The check on returned rows comes in a later slice.
+- PII columns are tagged in `schema.yaml`, resolved from the parsed query rather than matched by name, and blocked. Results are checked again before rows reach the model. **Decided and built 2026-10-31** ([ticket 08](../tasks/08-block-personal-data-columns.md)): an allow-list instead of tags. Only columns listed in `schema.yaml` can be read, so a personal column nobody tagged is blocked anyway. The check lives in a new `query_safety/step2_personal_data/columns.py`, called by the gateway right after the guard. The check on returned rows comes in a later slice. **Not built:** dropped by the build freeze (2026-11-01), now a known limit in the write-up.
 - `user_id` is replaced by a salted-hash pseudonym that stays stable across turns. **Built 2026-11-01** ([ticket 09](../tasks/09-hash-customer-ids.md)): `query_safety/step2_personal_data/customer_pseudonyms.py` (`CustomerPseudonyms.apply`) swaps `users`, `orders` and `order_items` for copies whose customer id is `cust_` + 12 hex characters of `SHA256(salt + id)`, using the same swap-the-table rewrite as brand scope and adding only the copies a query reads. It runs for every user, the CEO too, right after the column check and **before** brand scope: for a brand manager, brand scope then filters the real tables inside the hashed copies (the ticket proposed the other order; this one keeps all personal-data work in step 2, and the tests show no real id is read either way). The salt is `PSEUDONYM_SALT` (a `SecretStr`, random per run when unset or empty) and reaches BigQuery only as the query parameter `@pseudonym_salt`; the guard now rejects parameters and system variables in the model's SQL, so the model can't read it. `schema.yaml` lists the three id columns as `STRING` pseudonyms. Checked on real BigQuery: as the CEO and as the Levi's manager, the top customers come back as `cust_…` and a follow-up filtering on one of them answers (the manager sees only Levi's items).
 - Demographic columns (city, state, country, age, gender, traffic source) are allowed only in aggregated queries.
 - Aggregate groups smaller than `MIN_GROUP_SIZE` customers (default 5, configurable) are hidden, so a small group can't identify a person. **Both built 2026-11-01 as one slice** ([ticket 10](../tasks/10-demographics-only-in-totals-of-5.md), [small-groups.html](small-groups.html)): the columns are tagged `aggregate_only: true` in `schema.yaml`. `query_safety/step2_personal_data/small_groups.py` (`SmallGroups.apply`) runs after the column check and before pseudonyms. Every SELECT that reads a tagged column straight from a table must be a total (GROUP BY, or an aggregate outside a window), or it's rejected; ARRAY_AGG and STRING_AGG are rejected too. A total gets `HAVING COUNT(DISTINCT <customer id>) >= MIN_GROUP_SIZE`, so BigQuery drops small groups before `LIMIT`. Checked on real BigQuery: the smallest cities by customers come back with exactly 5, as the CEO and as the Levi's manager. Known limit for the design doc: subtracting two allowed totals can still single out one customer.
@@ -160,9 +160,9 @@ Lives inside the gateway. This is the most heavily graded part.
 
 - SQL error: the error goes back to the model to fix, within a fixed retry budget. The dry-run catches mistakes before they cost anything.
 - Empty result: the model rechecks its filters and assumptions within the same budget, then says plainly that nothing matched.
-- LLM 429/5xx: fall back to another model of the same provider (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`, set by `LLM_FALLBACK_MODELS`, `[]` turns it off). The client named a Gemini-only fallback as the default, and each Gemini model has its own free-tier quota of 20 requests a day, so a second model roughly doubles what a reviewer's free key can do. Seen on 2026-10-30: `gemini-3.8-flash` returned 503 "high demand", and the Gemini SDK's own silent retries made the CLI look frozen for minutes. Done early (2026-10-30): each LLM call has a 30s timeout and 1 SDK retry (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`), and a failed question prints a clear message while the CLI keeps running. **Built 2026-10-31:** LangChain's `ModelFallbackMiddleware`, placed inside `CallBudget` so a fallback model gets the same request (including the no-tools last call). Every call tries the primary first, so the agent returns to it once it recovers. A fallback attempt doesn't count against the 5-call budget, because it replaces a call that failed. Only the fallback models are built from config; the provider is the one in `LLM_PROVIDER`, so Gemini never falls back to another provider. The demo may still run on Anthropic (set through config). BigQuery: timeouts, plus retries on transient errors.
+- LLM 429/5xx: fall back to another model of the same provider (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`, set by `LLM_FALLBACK_MODELS`, `[]` turns it off). The client named a Gemini-only fallback as the default, and each Gemini model has its own free-tier quota of 20 requests a day, so a second model roughly doubles what a reviewer's free key can do. Seen on 2026-10-30: `gemini-3.8-flash` returned 503 "high demand", and the Gemini SDK's own silent retries made the CLI look frozen for minutes. Done early (2026-10-30): each LLM call has a 30s timeout and 1 SDK retry (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`), and a failed question prints a clear message while the CLI keeps running. **Built 2026-10-31:** LangChain's `ModelFallbackMiddleware`, placed inside `CallBudget` so a fallback model gets the same request (including the no-tools last call). Every call tries the primary first, so the agent returns to it once it recovers. A fallback attempt doesn't count against the 5-call budget, because it replaces a call that failed. Only the fallback models are built from config; the provider is the one in `LLM_PROVIDER`, so Gemini never falls back to another provider. The demo may still run on Anthropic (set through config). BigQuery: timeouts, plus retries on transient errors. **Not built:** dropped by the build freeze (2026-11-01). Today a transient BigQuery error ends the question with a clear message and the CLI keeps running; retries go in the write-up as a production next step.
 - During an outage the user gets a clear message, and the CLI keeps running.
-- Optional, if time allows (ticket 05, moved from step 1): at startup, check `schema.yaml` against the live tables through `describe_tables()` (metadata only, no bytes scanned) and fail fast, naming each missing table or column. A missing required setting fails the same way.
+- Optional, if time allows (ticket 05, moved from step 1; **not built**, dropped by the build freeze): at startup, check `schema.yaml` against the live tables through `describe_tables()` (metadata only, no bytes scanned) and fail fast, naming each missing table or column. A missing required setting fails the same way.
 
 **Done when:** a bad column, a forced 429 (recovered by the fallback model) and a network drop each end in either a recovered answer or a clean message, never a crash.
 
@@ -192,16 +192,78 @@ Lives inside the gateway. This is the most heavily graded part.
 
 **Done when:** one question's LangSmith trace shows how its answer was produced (LLM calls, SQL, rows, timing), the log file gives the same story when tracing is off, and every metric in the design doc maps to a log line or trace field.
 
-### Step 7: Docs
+## Final phase: docs and demo
 
-The docs grow with each step, and this step finishes them. Start the HLD outline right after step 1 and fill it in as each step lands: grading weights the design and the write-up most, so they shouldn't be squeezed in at the end.
+Decided 2026-11-01: the prototype already covers every requirement the brief marks as "built", and more, for a 6–12 hour task. So the build stops here, and the rest of the time goes to what grading weights most: the system design and the technical explanation. Step 7 (docs) is folded into this phase.
 
-- HLD with a Mermaid architecture diagram: [hld.md](hld.md) (first version 2026-10-31, decided parts only).
-- Technical write-up: cloud services, LLM and framework choice with reasoning **and the author's level of experience with the framework** (the brief asks for it), data flow, error handling, setup with an example run, and how each requirement is met.
-- Design for the design-only parts: Golden Knowledge bucket (how it's updated over time, and how relevant trios reach the model at question time), learning loop (user level: tables vs. bullets, depth, charts vs. text; system level: learning from past interactions), QA and evals (before deployment, checking that reports answer the user's intent, UX), persona and tone updates without redeploying.
-- Extensibility: how a new capability (charts, emailing reports, web search for trends) plugs in as another tool, behind the same policy layers.
-- Setup for reviewers (ticket 06, moved from step 1): Anthropic and OpenAI as optional extras, a commented `.env.example`, and a README with the Gemini key and GCP setup, an example run, and the provider status (Gemini is the default and tested; Anthropic, OpenAI and Azure OpenAI are available but switched off). Ship a `requirements.txt` exported with `uv export`, so the brief's `pip install -r requirements.txt` works next to the `uv` path.
-- Points the client asked to see covered: the provider trade-off (swappable providers vs. a Gemini-only default), the minimum group size, and IP address listed as PII.
+### Build freeze
+
+- **Ticket 15** (`--verbose` SQL outcomes): built and committed 2026-11-01. Its manual Gemini check (❌ then ✅) happens in the demo rehearsal.
+- **Ticket 14** (LangSmith): its live check also happens in the rehearsal.
+- **Dropped, written up as known limits / production next steps:** the check on returned rows (step 3), BigQuery retries on transient errors (step 4), the startup schema check (ticket 05). Add to the same list the limit found in step 3: subtracting two allowed totals can still single out one customer.
+- The only code changes allowed now are fixes for bugs that break the demo script.
+
+### Where each deliverable lives
+
+| Brief deliverable | File |
+|---|---|
+| 1. Architecture diagram | [hld.md](hld.md): a production diagram, plus the prototype diagram it has today |
+| 2a. Reasoning for cloud services, LLM, framework | `docs/technical-explanation.md` (new) |
+| 2b. Data flow | [hld.md](hld.md): one question from the CLI to BigQuery and back |
+| 2c. Error handling and fallbacks | `technical-explanation.md`, with the resilience table in [hld.md](hld.md) |
+| 2d. Setup and example run | `README.md` |
+| 2e. How each requirement is solved | `technical-explanation.md`: one section per requirement, 1 to 8 |
+| 5. Runnable on another machine | `README.md` + `requirements.txt` |
+| 6. Framework choice and the author's experience with it | `technical-explanation.md` |
+
+The HTML explainers in `docs/` stay as optional deep dives, linked from the README and from the write-up sections they explain.
+
+### Docs, in order
+
+Each step leaves the docs readable from start to finish, like the thin slices in the build.
+
+1. **D1. Skeleton (start here).** `README.md` with a short intro and a map of the docs; `hld.md` split into "Production design" and "The prototype"; `technical-explanation.md` with every heading from the table above and one line under each saying what goes there. Done when a reviewer can reach every deliverable from the README, even while sections are thin.
+2. **D2. Production HLD.** The brief asks for a *production*-ready design: which services, how components talk, where data is stored. Today `hld.md` covers only the prototype, and it still marks reports, the delete confirmation and LangSmith as planned. Fix those marks first. Then add the production diagram: chat front end and sign-in (SSO in place of `--user`), the agent service, the query gateway, BigQuery, the report store, the Golden Knowledge store and its retrieval, the user preference store, the prompt store for persona, secrets, tracing and metrics. Mark which boxes the prototype builds. The services are an open decision (below).
+3. **D3. Design-only requirements**, the biggest gap, since nothing is written yet: 1 Golden Knowledge (how trios are added and kept up to date over time, and how the relevant ones reach the model at question time), 4 learning loop (user level: tables vs. bullets, depth, charts vs. text; system level: learning from past interactions), 6 QA and evals (before deployment, checking that reports answer the user's intent, UX), 8 persona and tone changed by non-developers without redeploying. Also, for 7, the metrics table: each metric with its log line or trace field (the list is in step 6).
+4. **D4. Built requirements and reasoning.** Requirements 2, 3, 5 and 7: what happens, where it is in the code, and which [demo question](demo-questions.md) shows it. Why LangChain/LangGraph and Gemini, the provider trade-off, and **your level of experience with the framework** (only you can write this). Extensibility: charts, emailing reports and web search each plug in as another tool behind the same gateway and confirmation. The client's points: minimum group size, IP address listed as PII. Known limits from the build freeze. Reuse the decision tables in this plan and the explainers instead of writing from scratch.
+5. **D5. Reviewer setup** (ticket 06): `requirements.txt` from `uv export`; Anthropic and OpenAI as optional extras; a commented `.env.example`; README setup with the Gemini key and GCP auth, for both `uv` and `pip`; an example run taken from the demo rehearsal. Done when a fresh clone in a new folder answers a question using the `pip` path.
+6. **D6. Final pass.** Links, consistent names and status marks across the docs, and the stale HTML explainers updated or marked as such.
+
+### Demo
+
+Assumed: a review call with a short live demo. The format isn't confirmed (open decision below).
+
+**Running order, about 20 minutes:**
+1. Problem and architecture, 3 min: the production diagram, then the path one question takes through the prototype.
+2. Live demo, 10 min: the script below.
+3. Design-only parts, 5 min: Golden Knowledge, the learning loop, evals and persona, shown on the HLD. Don't present them as working.
+4. Questions: keep the known limits and the "why" answers ready (why rewrite SQL rather than use views, why not LangChain's PII middleware, cost per question, how it scales).
+
+**Live script.** Run as `ceo` with `--verbose`. The numbers refer to rows in [demo-questions.md](demo-questions.md).
+
+| # | Shows | Question | LLM calls |
+|---|---|---|---|
+| 1 | Questions about the data's structure | 1.1 what data do you have | 1 |
+| 2 | Natural question, then a follow-up | 1.2 top 5 brands last month, then 1.3 the month before | 4 |
+| 3 | PII safety | 4.1 names and emails of top customers: ❌ from the gateway, then pseudonyms | 2 |
+| 4 | Multi-step question and a saved report | 3.1 Q1 report with action items for Q2 | 2–3 |
+| 5 | Brand scope | restart as `levis_manager`, 4.12 top 5 brands: only Levi's | 2 |
+| 6 | High-stakes delete | back as `ceo`, "Delete all reports mentioning Q1": `no`, then again and `yes` | 2 |
+| 7 | Self-correction | 6.1 the "jeans" category | 3 |
+| 8 | Observability | `tail logs/retail-agent.log`, and the LangSmith trace of #4 | 0 |
+
+About 16–17 LLM calls: within one Gemini model's 20 free requests a day, with the fallback model in reserve.
+
+**Prep checklist:**
+- Rehearse on Claude (local `.env`) so Gemini's daily quota stays untouched; do one full dry run on Gemini the day before.
+- Done when the script runs start to finish twice in a row, without fixes in between.
+- Record one clean run as a backup, in case Gemini returns 503 or runs out of quota live. The same transcript becomes the README's example run (D5). Take screenshots of the LangSmith trace too.
+- On demo day: an empty report store, `LANGSMITH_*` keys set, a large terminal font, `demo-questions.md` open.
+- Update the short script at the end of `demo-questions.md` to match the table above.
+
+### Order of work
+
+D1 → D2 → D3 → D4 → demo rehearsal (this also gives D5 its example run) → D5 → D6 → final Gemini dry run.
 
 ## Requirement → step
 
@@ -213,10 +275,13 @@ The docs grow with each step, and this step finishes them. Start the HLD outline
 | Resilience | 4 |
 | Reports with action items, multi-step questions, high-stakes oversight | 5 |
 | Observability, agent-level metrics | 6 |
-| HLD, write-up, design-only parts, extensibility, reviewer setup | 7 (grows alongside) |
+| HLD, write-up, design-only parts, extensibility, reviewer setup | Final phase (D1–D6) |
+| Demo | Final phase |
 
 ## Open decisions
 
 - ~~**Scoping mechanism.**~~ Decided 2026-10-31: rewrite the SQL (see step 3).
 - ~~**Measuring group size.**~~ Decided 2026-11-01: `HAVING COUNT(DISTINCT <customer id>)` added by the gateway on every total of a tagged column (see step 3).
 - ~~**Call budget for reports.**~~ Decided 2026-11-01: keep 5. The live Q1 report took 2 calls with 6 parallel queries, so there's no need to ask Harry for more.
+- **Production services for the HLD** (decide in D2): for example Cloud Run for the agent, Gemini on Vertex AI, Cloud SQL or Firestore for reports and preferences, Cloud Storage plus a vector index for Golden Knowledge, Secret Manager, and the company's SSO.
+- **Demo format:** a live call or a recording, and how long. Ask OpsFleet.
