@@ -151,7 +151,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
     <p>Each box is a file. The agent and the LLM go back and forth until the model has enough data to answer. A normal question takes 2 LLM calls.</p>
 
     <div class="flow">
-      <div class="station ui col-main"><span class="file">cli.py</span><p>Started as <code>retail-agent --user levis_manager</code>; the user and their brands come from <code>users.yaml</code> (<code>users.py</code>). You type <em>"Top 5 brands by revenue last month?"</em>. Prints the SQL and ANSWER blocks, or a clear message if the model is busy.</p></div>
+      <div class="station ui col-main"><span class="file">cli.py</span><p>Started as <code>retail-agent --user levis_manager</code>; the user and their brands come from <code>users.yaml</code> (<code>users.py</code>). You type <em>"Top 5 brands by revenue last month?"</em>. Prints the SQL that ran and the ANSWER block, or a clear message if the model is busy. With <code>--verbose</code> (<code>make run_logs</code>) it prints every SQL the model tried, each with ✅ ran or ❌ and the reason.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>app.ask(question)</span></div>
@@ -242,7 +242,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
         <thead><tr><th>File</th><th>Why it exists</th><th>Grows in</th></tr></thead>
         <tbody>
           <tr class="group"><td colspan="3">Application code · src/retail_agent/</td></tr>
-          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL, CONFIRM and ANSWER blocks, turns failures into plain messages. <code>--user</code> picks who is asking. A CONFIRM block waits for a typed answer; Ctrl-D counts as no.</td><td class="grows">–</td></tr>
+          <tr class="ui"><td class="path">cli.py</td><td>The terminal chat. Loads <code>.env</code>, sets up logging, prints SQL, CONFIRM and ANSWER blocks, turns failures into plain messages. <code>--user</code> picks who is asking. The SQL blocks show only queries that ran; <code>--verbose</code> shows every attempt, with ✅ or ❌ and the reason from <code>TurnResult.sql</code> (<code>SqlRun(sql, error)</code>). A CONFIRM block waits for a typed answer; Ctrl-D counts as no.</td><td class="grows">–</td></tr>
           <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL, or a confirmation to show; <code>App.confirm</code> resumes a paused turn. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
           <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Loop rules attach here as middleware: <code>CallBudget</code> limits a question to 5 LLM calls and makes the last one answer.</td><td class="grows">step 5</td></tr>
           <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
