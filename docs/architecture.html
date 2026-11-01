@@ -135,7 +135,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
 
 <main>
   <header style="display:grid;gap:12px">
-    <div class="eyebrow">retail-data-agent · steps 1–2, step 3 in progress · as of 2026-11-01 (PII columns blocked, pseudonyms, small groups hidden)</div>
+    <div class="eyebrow">retail-data-agent · steps 1–2 done, steps 3 and 5 in progress · as of 2026-11-01 (small groups hidden, reports saved)</div>
     <h1>Retail Data Agent Map</h1>
     <p class="lede">How one question travels from your terminal to BigQuery and back, and why each file in the repo exists. See also <a href="tool-factory.html">why run_sql has a factory</a>, <a href="brand-scoping.html">how each user sees only their brands</a>, and <a href="sql-parser-rules.html">how the parser rules stop a bad query</a>.</p>
     <div class="legend" aria-label="Color legend">
@@ -165,8 +165,8 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
         <h3>The agent loop</h3>
         <ol class="steps">
           <li>LLM reads the question, the earlier turns, the schema and the rules, then writes SQL.</li>
-          <li><code>run_sql</code> runs it and returns rows as a table.</li>
-          <li>LLM reads the rows and writes the answer.</li>
+          <li><code>run_sql</code> runs it and returns rows as a table. Independent queries go out together in one reply and run at the same time.</li>
+          <li>LLM reads the rows and writes the answer. For a report, it writes the report into <code>save_report</code> instead, which saves it and shows it as the answer.</li>
         </ol>
         <p class="note">If the SQL fails or the guard rejects it, the error goes back to the LLM so it can fix it. A question gets at most 5 LLM calls; the 5th has no tools, so it answers from the results it already has.</p>
       </div>
@@ -181,7 +181,7 @@ tr.group td { background: var(--bg); font: 600 0.8rem var(--font-body); color: v
       <div class="arrow col-main"><span>tool call: run_sql(sql)</span></div>
       <div class="spacer"></div>
 
-      <div class="station data col-main"><span class="file">tools.py → run_sql</span><p>The only tool. Hands the SQL to the gateway and turns the result into a compact text table for the LLM (<code>result_format.py</code>), with a note when rows were cut off or none matched. A rejected query comes back as <code>Error: …</code>.</p></div>
+      <div class="station data col-main"><span class="file">tools.py → run_sql, save_report</span><p><code>run_sql</code> hands the SQL to the gateway and turns the result into a compact text table for the LLM (<code>result_format.py</code>), with a note when rows were cut off or none matched. A rejected query comes back as <code>Error: …</code>. <code>save_report</code> (step 5) saves a finished report to <code>reports.py</code>'s SQLite file, with the owner, conversation, question and SQL filled in by the code, and its result is the final answer.</p></div>
       <div class="spacer"></div>
 
       <div class="arrow col-main"><span>gateway.run(sql)</span></div>
@@ -246,7 +246,8 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="llm"><td class="path">app.py</td><td>Wires everything in one place. <code>build_app</code> picks the real parts, <code>assemble</code> connects them, <code>App.ask</code> returns the answer and SQL. One <code>App</code> is one conversation.</td><td class="grows">each step</td></tr>
           <tr class="llm"><td class="path">agent.py</td><td>Creates the LangChain agent. Loop rules attach here as middleware: <code>CallBudget</code> limits a question to 5 LLM calls and makes the last one answer.</td><td class="grows">step 5</td></tr>
           <tr class="llm"><td class="path">llm.py</td><td>One function that builds the chat model from config, so switching providers never touches other code.</td><td class="grows">–</td></tr>
-          <tr class="data"><td class="path">tools.py</td><td>The <code>run_sql</code> tool the LLM calls. Rejected queries come back to the model as <code>Error: …</code>.</td><td class="grows">step 5</td></tr>
+          <tr class="data"><td class="path">tools.py</td><td>The tools the LLM calls: <code>run_sql</code> (rejected queries come back as <code>Error: …</code>) and <code>save_report</code>, which saves a report and ends the turn with it, so saving costs no extra LLM call.</td><td class="grows">step 5 (list, delete)</td></tr>
+          <tr class="data"><td class="path">reports.py</td><td>The report store: a SQLite file at <code>REPORTS_PATH</code> (default <code>data/reports.sqlite3</code>), created on the first save. Each row has the owner, conversation id, time, question, the SQL behind the numbers and the report text.</td><td class="grows">step 5 (list, delete)</td></tr>
           <tr class="data"><td class="path">result_format.py</td><td>How results are shown to the LLM: a compact table, plain dates and numbers, a note when rows were cut off, and "no rows" said in words.</td><td class="grows">–</td></tr>
           <tr class="data"><td class="path">query_safety/gateway.py</td><td>The single door to the data. Every safety rule lives here, so nothing can go around it: the guard, the personal-data check, the small-groups check, the customer pseudonyms, the brand scope, the byte limit, the row cap.</td><td class="grows">step 3</td></tr>
           <tr class="data"><td class="path">query_safety/step1_guard.py</td><td>Parses each query with sqlglot before it runs: exactly one SELECT, no query parameters or system variables, reading only the allowed tables, no table functions. Fails closed if it can't parse.</td><td class="grows">step 3</td></tr>
@@ -271,10 +272,11 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
           <tr class="group"><td colspan="3">Setup</td></tr>
           <tr class="cfg"><td class="path">.env.example</td><td>Every setting documented. Copy it to <code>.env</code> and fill in your keys.</td><td class="grows">as settings are added</td></tr>
           <tr class="cfg"><td class="path">pyproject.toml, uv.lock</td><td>Dependencies and the <code>retail-agent</code> command. Anthropic is an optional extra.</td><td class="grows">–</td></tr>
-          <tr class="cfg"><td class="path">.python-version, .gitignore</td><td>Pins Python 3.12. Keeps <code>.env</code>, <code>logs/</code> and the virtualenv out of git.</td><td class="grows">–</td></tr>
+          <tr class="cfg"><td class="path">.python-version, .gitignore</td><td>Pins Python 3.12. Keeps <code>.env</code>, <code>logs/</code>, <code>data/</code> (saved reports) and the virtualenv out of git.</td><td class="grows">–</td></tr>
 
           <tr class="group"><td colspan="3">Tests · run offline, no keys needed</td></tr>
           <tr class="ui"><td class="path">tests/fakes.py</td><td>A scripted fake LLM that records what it was sent, and a fake database with canned rows and byte estimates.</td><td class="grows">each step</td></tr>
+          <tr class="ui"><td class="path">tests/test_reports.py</td><td>A report turn (two parallel queries, then <code>save_report</code>) saves one row with the right owner, conversation, question and SQL in 2 LLM calls; a rejected query is left out; a normal question saves nothing.</td><td class="grows">step 5</td></tr>
           <tr class="ui"><td class="path">tests/test_turn.py</td><td>Drives full questions through <code>assemble</code> with the fakes: answer, SQL, prompt, logs, failures, call budget, follow-ups.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/harness.py</td><td>Shared helpers: builds an app from the fakes and reads what the model saw from a tool.</td><td class="grows">each step</td></tr>
           <tr class="ui"><td class="path">tests/test_step1_guard.py</td><td>Each guard rule and the byte limit, through the whole app: rejected queries never reach the database.</td><td class="grows">step 3</td></tr>
@@ -303,7 +305,7 @@ Revenue = sum of sale_price, excluding Cancelled and Returned items.</pre>
     <p>The structure exists so each step adds to one place instead of rewriting the rest.</p>
     <div class="seams">
       <div class="seam"><h3>Query gateway</h3><ul><li>Done in step 2: only single SELECTs on the 4 tables; dry-run byte check</li><li>Done in step 3: every query limited to the user's brands</li><li>Done in step 3: only <code>schema.yaml</code> columns, no <code>*</code>, so no personal data</li><li>Done in step 3: customer ids only as salted-hash pseudonyms, for every user</li><li>Done in step 3: demographics only in totals, groups under 5 customers hidden</li><li>Step 3 next: a safety-net check on returned rows</li></ul></div>
-      <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers</li><li>Step 5: confirm before deleting reports</li></ul></div>
+      <div class="seam"><h3>Agent middleware</h3><ul><li>Done: at most 5 LLM calls per question, the last one answers (and says a report can't be saved then)</li><li>Step 5 next: confirm before deleting reports</li></ul></div>
       <div class="seam"><h3>Database protocol</h3><ul><li>Ticket 05: check <code>schema.yaml</code> against live tables at startup</li><li>Another engine = another adapter, nothing else changes</li></ul></div>
       <div class="seam"><h3>Tests via assemble</h3><ul><li>Fake LLM records exactly what it was sent</li><li>Step 3 uses this to prove personal columns never reach the database or the LLM</li></ul></div>
     </div>

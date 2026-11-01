@@ -91,7 +91,7 @@ ol.refs .src { color: var(--muted); }
 <body>
 <main>
   <header style="display:grid;gap:10px">
-    <div class="eyebrow">retail-data-agent · research for step 5 (reports)</div>
+    <div class="eyebrow">retail-data-agent · research for step 5 (reports) · built 2026-11-01</div>
     <h1>One Report Question, Several SQL Queries</h1>
     <p class="lede">How the agent should answer report questions such as “create a Q1 report with action items for Q2”: send several SQL queries at once, run them at the same time, then write the report. Confirmed in a live test on Gemini and BigQuery (2026-10-31). Full research with every source: <a href="research/report-questions-db-agent.md">research/report-questions-db-agent.md</a>. See also <a href="architecture.html">the architecture map</a>.</p>
   </header>
@@ -104,6 +104,18 @@ ol.refs .src { color: var(--muted); }
       <li><strong>All 4 results go back to the model together</strong>, and it writes the answer or report.</li>
     </ol>
     <p class="summary">That's 2 LLM calls for the whole report, however many queries the batch holds. If a result raises a new question, the model can send one more round of queries, which makes 3 calls. That's still inside the budget of 5 per question.</p>
+  </section>
+
+  <section>
+    <div class="panel" style="--k:var(--good);--k-soft:var(--good-soft)">
+      <h3>What got built (ticket 11, 2026-11-01)</h3>
+      <ul>
+        <li><strong>The batching lines are in <code>prompts/system.md</code></strong>: work out every number first, send independent queries together, at most 2 rounds, fix only a failed query.</li>
+        <li><strong>The report is saved without an extra call.</strong> The model writes it into a <code>save_report</code> tool, whose result is the final answer (<code>return_direct</code>). The code adds the owner, conversation, question and the SQL behind the numbers, and stores it in <code>data/reports.sqlite3</code>.</li>
+        <li><strong>Live, 2026-11-01:</strong> as the CEO on <code>gemini-3.6-flash</code>, “Create a report for Q1 2026 including insights and action items for Q2” took <strong>2 LLM calls</strong>: 6 queries in the first reply, run together in about 2.5 s, then the report written and saved.</li>
+        <li><strong>The 5-call budget stays.</strong> The open question about asking for more calls for reports is closed.</li>
+      </ul>
+    </div>
   </section>
 
   <section>
@@ -340,8 +352,8 @@ ol.refs .src { color: var(--muted); }
     <div class="panel warn">
       <h3>What the live test showed</h3>
       <ul>
-        <li><strong>The batching lines matter.</strong> On the same model they turned “limit hit, no report” into a full report in 3 calls. They go into <code>prompts/system.md</code> in step 5.</li>
-        <li><strong>Answer on the last call.</strong> When the limit is hit, the user gets nothing useful today. Forcing the last call to answer without tools would have produced a report from the 5 results already gathered.</li>
+        <li><strong>The batching lines matter.</strong> On the same model they turned “limit hit, no report” into a full report in 3 calls. They've been in <code>prompts/system.md</code> since 2026-11-01.</li>
+        <li><strong>Answer on the last call.</strong> When the limit was hit, the user got nothing useful. Since then the last call has no tools and must answer from the results it has (<code>CallBudget</code>), and for a report it says the report can't be saved then.</li>
         <li><strong>Flash-Lite doesn't batch.</strong> It merged everything into one query instead. It still works as a fallback model, but its reports are thinner.</li>
         <li><strong>3.6 Flash is slow per call</strong> (16–20 s, because it thinks a lot). The time saved comes from BigQuery and from fewer rounds, not from faster LLM calls.</li>
         <li><strong>Gemini 3.8 Flash was overloaded all day</strong> (503), so it's still untested. That's one more reason for the model fallback in step 4.</li>
