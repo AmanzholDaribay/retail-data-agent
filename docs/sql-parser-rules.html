@@ -142,7 +142,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
 <main>
 
   <header style="display:grid; gap:10px">
-    <div class="eyebrow">Retail data agent · Query gateway · as of 2026-10-31</div>
+    <div class="eyebrow">Retail data agent · Query gateway · as of 2026-11-01</div>
     <h1>How does the parser turn SQL into a tree, and how do our rules catch a bad query?</h1>
     <p class="lede">Before any SQL runs, our code turns the AI's text into a tree of labelled pieces, then asks that tree a few yes/no questions in order. The first "no" stops the query, and BigQuery never sees it. See also <a href="sql-journey.html">one query's full journey</a>, <a href="brand-scoping.html">brand scoping</a> and <a href="sql-errors.html">what happens when a query fails</a>.</p>
     <div class="legend">
@@ -160,7 +160,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       <li><span>A library called <b>sqlglot</b> reads the SQL text and builds a tree: one labelled box (a <i>node</i>) per piece, such as <code>Select</code>, <code>Star</code> (<code>*</code>), <code>Column</code> and <code>Table</code>.</span></li>
       <li><span>Our checks walk that tree and ask questions such as "is every table one of the 4?" or "is there a <code>*</code> that isn't inside <code>COUNT</code>?".</span></li>
       <li><span>A "no" calls <code>raise</code>: Python stops right there, the AI gets an <code>Error: …</code> message, and BigQuery is never called.</span></li>
-      <li><span>The checks only <i>read</i> the tree. The text that goes to BigQuery is the AI's own text, rewritten in two places: customer ids become pseudonyms (for everyone), and tables are filtered to the user's brands (for brand managers).</span></li>
+      <li><span>The checks only <i>read</i> the tree. The text that goes to BigQuery is the AI's own text, rewritten in up to three places: a total of age, city and the like gets a <code>HAVING</code> that hides groups under 5 customers, customer ids become pseudonyms (for everyone), and tables are filtered to the user's brands (for brand managers).</span></li>
     </ol>
   </section>
 
@@ -278,11 +278,11 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       </div>
       <div class="arrow stop">skipped</div>
       <div class="box skipped step">
-        <span class="q">Customer pseudonyms → brand scope rewrite → byte-limit dry run → BigQuery runs it</span><span class="verdict">never reached</span>
-        <span class="where">step2_personal_data/customer_pseudonyms.py · step3_brand_scope/brand_scope.py · gateway.py · db/</span>
+        <span class="q">Small groups → customer pseudonyms → brand scope rewrite → byte-limit dry run → BigQuery runs it</span><span class="verdict">never reached</span>
+        <span class="where">step2_personal_data/small_groups.py · step2_personal_data/customer_pseudonyms.py · step3_brand_scope/brand_scope.py · gateway.py · db/</span>
       </div>
     </div>
-    <p>The AI reads the error and sends <code>SELECT id, age, gender, city, state, country, traffic_source, created_at FROM users LIMIT 3</code>. That has no Star and only schema columns, so it passes all of them. (In the live run on 2026-10-31, the AI named those 8 columns on its first try, because the prompt asks it to.)</p>
+    <p>The AI reads the error and names the columns instead. In the live run on 2026-10-31 it sent <code>SELECT id, age, gender, city, state, country, traffic_source, created_at FROM users LIMIT 3</code>, which passed these seven questions. Since 2026-11-01 it is stopped one step later: age, gender, city, state, country and traffic source may appear only inside totals (rule 10 below, and <a href="small-groups.html">small groups</a>). <code>SELECT id, created_at FROM users LIMIT 3</code> passes everything.</p>
   </section>
 
   <section>
@@ -340,10 +340,13 @@ def _reject_select_star(statement):
           <tr><td class="n">7</td><td>Does every column trace back, through aliases, joins, subqueries and WITH, to a column in schema.yaml? Is it clear which table it's from?</td><td class="sql">SELECT email FROM users<br>SELECT gender FROM users u JOIN orders o …</td><td class="msg">Read only the columns listed in the schema. When a column is in two joined tables, prefix it with the table alias. (Column 'email' could not be resolved.)</td></tr>
           <tr><td class="n">8</td><td>Is there a Star whose parent isn't Count?</td><td class="sql">SELECT * FROM users<br>SELECT u.* …<br>SELECT * EXCEPT (id) …</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
           <tr><td class="n">9</td><td>Is a whole table row used as a value (a TableColumn node)?</td><td class="sql">SELECT u FROM users u<br>TO_JSON_STRING(u)</td><td class="msg">Select columns, not whole rows: `u` is a table, not a column.</td></tr>
+          <tr class="group is-bad"><td colspan="4">step2_personal_data/small_groups.py · demographic columns only in totals of 5+ customers</td></tr>
+          <tr><td class="n">10</td><td>For every SELECT that reads a column tagged <code>aggregate_only</code> in schema.yaml (age, gender, city, state, country, traffic source) straight from a table: is it a total, meaning a GROUP BY or an aggregate that isn't inside a window (<code>OVER</code>)? A WITH step that only passes the column along counts as a listing.</td><td class="sql">SELECT id, city FROM users<br>SELECT DISTINCT country …<br>COUNT(*) OVER (PARTITION BY city)</td><td class="msg">`users.city` can be used only inside a total (COUNT, SUM, AVG ... with GROUP BY), in the same SELECT that reads the table …</td></tr>
+          <tr><td class="n">11</td><td>Does that total use ARRAY_AGG, STRING_AGG or ARRAY_CONCAT_AGG? They give one row per group, but it holds every customer's value. If not, add <code>HAVING COUNT(DISTINCT &lt;customer id&gt;) &gt;= 5</code> to that same SELECT (ANDed with the AI's own HAVING), so BigQuery drops small groups before LIMIT.</td><td class="sql">SELECT ARRAY_AGG(city) FROM users<br>GROUP BY city → GROUP BY city HAVING COUNT(DISTINCT users.id) &gt;= 5</td><td class="msg">`users.city` can't be collected with ARRAY_AGG or STRING_AGG … For a plain total: nothing, the HAVING is added quietly.</td></tr>
           <tr class="group is-ours"><td colspan="4">step2_personal_data/customer_pseudonyms.py · rewrites the tree (every user, the CEO too)</td></tr>
-          <tr><td class="n">10</td><td>Swap each customer table the query reads (<code>users</code>, <code>orders</code>, <code>order_items</code>) for a copy whose customer id is a salted hash, and put those copies in the WITH clause at the front. BigQuery builds the copies while the query runs, so the AI's SQL only ever sees pseudonyms.</td><td class="sql">FROM users<br>→ FROM _pseudonymized_users AS users</td><td class="msg">Nothing; the AI isn't told. It sees ids such as <code>cust_72ac84091163</code>, and a follow-up can filter on one.</td></tr>
+          <tr><td class="n">12</td><td>Swap each customer table the query reads (<code>users</code>, <code>orders</code>, <code>order_items</code>) for a copy whose customer id is a salted hash, and put those copies in the WITH clause at the front. BigQuery builds the copies while the query runs, so the AI's SQL only ever sees pseudonyms.</td><td class="sql">FROM users<br>→ FROM _pseudonymized_users AS users</td><td class="msg">Nothing; the AI isn't told. It sees ids such as <code>cust_72ac84091163</code>, and a follow-up can filter on one.</td></tr>
           <tr class="group is-ours"><td colspan="4">step3_brand_scope/brand_scope.py · rewrites the tree (brand managers only; a user with every brand skips it)</td></tr>
-          <tr><td class="n">11</td><td>Swap every Table node for a filtered copy (<code>_brand_scoped_users</code> …) and put those copies in the WITH clause at the front. The tree is turned back into text, and <b>that</b> text runs.</td><td class="sql">FROM users<br>→ FROM _brand_scoped_users AS users</td><td class="msg">Nothing; the AI isn't told. A table with no brand filter is stopped: "can't be limited to your brands".</td></tr>
+          <tr><td class="n">13</td><td>Swap every Table node for a filtered copy (<code>_brand_scoped_users</code> …) and put those copies in the WITH clause at the front. The tree is turned back into text, and <b>that</b> text runs.</td><td class="sql">FROM users<br>→ FROM _brand_scoped_users AS users</td><td class="msg">Nothing; the AI isn't told. A table with no brand filter is stopped: "can't be limited to your brands".</td></tr>
         </tbody>
       </table>
     </div>
@@ -356,10 +359,10 @@ def _reject_select_star(statement):
   </div>
 
   <footer>
-    <div>Code: <code>QueryGuard.check</code> in <code>src/retail_agent/query_safety/step1_guard.py</code>; <code>PersonalDataCheck.check</code> in <code>src/retail_agent/query_safety/step2_personal_data/columns.py</code>; <code>CustomerPseudonyms.apply</code> in <code>src/retail_agent/query_safety/step2_personal_data/customer_pseudonyms.py</code>; <code>BrandScope.apply</code> in <code>src/retail_agent/query_safety/step3_brand_scope/brand_scope.py</code>; called in that order by <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code>, wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
+    <div>Code: <code>QueryGuard.check</code> in <code>src/retail_agent/query_safety/step1_guard.py</code>; <code>PersonalDataCheck.check</code> in <code>src/retail_agent/query_safety/step2_personal_data/columns.py</code>; <code>SmallGroups.apply</code> in <code>src/retail_agent/query_safety/step2_personal_data/small_groups.py</code>; <code>CustomerPseudonyms.apply</code> in <code>src/retail_agent/query_safety/step2_personal_data/customer_pseudonyms.py</code>; <code>BrandScope.apply</code> in <code>src/retail_agent/query_safety/step3_brand_scope/brand_scope.py</code>; called in that order by <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code>, wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
     <div>Library: sqlglot 30.27 (<code>parse_one</code>, <code>find_all</code>, <code>optimizer.qualify.qualify</code>), BigQuery dialect.</div>
-    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Rejections are logged as <code>SQL rejected: …</code> in <code>logs/retail-agent.log</code>.</div>
-    <div>Tickets: <code>tasks/08-block-personal-data-columns.md</code>, <code>tasks/09-hash-customer-ids.md</code>. Plan: step 2 and step 3 in <code>docs/plan.md</code>. See also <a href="sql-journey.html">one query's full journey</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>, <a href="small-groups.html">small groups</a>.</div>
+    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_small_groups.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Rejections are logged as <code>SQL rejected: …</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Tickets: <code>tasks/08-block-personal-data-columns.md</code>, <code>tasks/09-hash-customer-ids.md</code>, <code>tasks/10-demographics-only-in-totals-of-5.md</code>. Plan: step 2 and step 3 in <code>docs/plan.md</code>. See also <a href="sql-journey.html">one query's full journey</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="architecture.html">architecture</a>, <a href="sql-errors.html">SQL errors</a>, <a href="small-groups.html">small groups</a>.</div>
   </footer>
 
 </main>

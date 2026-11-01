@@ -95,7 +95,7 @@ section { display: grid; gap: 16px; min-width: 0; }
 .station.data { --k: var(--data); --k-soft: var(--data-soft); }
 .station .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .tag { font: 600 0.72rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--k); background: var(--k-soft); border-radius: 999px; padding: 5px 10px; }
-.station .file { font: 0.78rem/1.3 var(--font-mono); color: var(--muted); margin-left: auto; }
+.station .file { font: 0.78rem/1.3 var(--font-mono); color: var(--muted); margin-left: auto; overflow-wrap: anywhere; }
 .life { color: var(--muted); font-size: 0.9rem; }
 .checks { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.92rem; }
 .verdict { display: inline-block; font: 600 0.8rem/1 var(--font-mono); color: var(--k); }
@@ -156,7 +156,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
   <section class="short" aria-label="In short">
     <h2>In short</h2>
     <ol>
-      <li><span><b>Checks first.</b> Is it a safe, single read of our 4 tables, using only allowed columns? If not, it stops, and the AI gets the reason so it can fix its SQL.</span></li>
+      <li><span><b>Checks first.</b> Is it a safe, single read of our 4 tables, using only allowed columns, with age, city and the like only in totals of 5+ customers? If not, it stops, and the AI gets the reason so it can fix its SQL.</span></li>
       <li><span><b>Then two rewrites.</b> Customer ids become nicknames like <code>cust_249e6e6fc97d</code>, and every table is cut down to the user's brands.</span></li>
       <li><span><b>Then a free size check.</b> Anything that would scan more than 1 GB is stopped before it costs money.</span></li>
       <li><span><b>Only then BigQuery runs it.</b> The rows go back to the AI, which writes the answer.</span></li>
@@ -175,10 +175,10 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
       <div class="station ai">
         <div class="head"><span class="tag">The AI writes SQL</span><span class="file">LLM → run_sql tool</span></div>
         <p>It writes the obvious query over the real tables. No brand filter, no nicknames: it doesn't have to think about safety.</p>
-<pre>SELECT u.id, u.country, COUNT(DISTINCT o.order_id) AS orders
+<pre>SELECT u.id, COUNT(DISTINCT o.order_id) AS orders
 FROM `…thelook_ecommerce.users` u
 JOIN `…thelook_ecommerce.orders` o ON o.user_id = u.id
-GROUP BY u.id, u.country
+GROUP BY u.id
 ORDER BY orders DESC
 LIMIT 3</pre>
       </div>
@@ -202,7 +202,7 @@ LIMIT 3</pre>
         <div class="head"><span class="tag">Step 2a · Personal-data columns</span><span class="file">step2_personal_data/columns.py</span></div>
         <p class="life">🏠 Like a guest list: only columns written in <code>schema.yaml</code> get in. Names, email and addresses aren't on it.</p>
         <ul class="checks">
-          <li><span class="verdict">✅</span> <code>id</code>, <code>country</code>, <code>order_id</code>, <code>user_id</code> are all on the list</li>
+          <li><span class="verdict">✅</span> <code>id</code>, <code>order_id</code>, <code>user_id</code> are all on the list</li>
           <li><span class="verdict">✅</span> No <code>*</code>, no whole rows</li>
         </ul>
         <div class="exit"><b>✕ Stopped if</b> e.g. <code>SELECT email …</code> → <code>Read only the columns listed in the schema.</code></div>
@@ -211,17 +211,29 @@ LIMIT 3</pre>
       <div class="arrow"></div>
 
       <div class="station rewrite">
-        <div class="head"><span class="tag">Step 2b · Customer pseudonyms</span><span class="file">step2_personal_data/customer_pseudonyms.py</span></div>
+        <div class="head"><span class="tag">Step 2b · Small groups</span><span class="file">step2_personal_data/small_groups.py</span></div>
+        <p>Age, gender, city, state, country and traffic source are tagged <code>aggregate_only</code> in <code>schema.yaml</code>. They may appear only inside a total, and the gateway adds <code>HAVING COUNT(DISTINCT …id) &gt;= 5</code> to that total, so BigQuery drops groups under 5 customers.</p>
+        <p class="life">🏠 Like a census office: counts per town, never a list of residents, and no town with fewer than 5 people.</p>
+        <ul class="checks">
+          <li><span class="verdict">✅</span> No tagged column in this query, so nothing to do</li>
+        </ul>
+        <div class="exit"><b>✕ Stopped if</b> e.g. <code>SELECT id, city FROM users</code> → <code>`users.city` can be used only inside a total …</code>. Had the AI added <code>u.country</code> to this query, every group would be one customer, and the <code>HAVING</code> would hide every row.</div>
+        <p class="note">The SQL is unchanged here. For a total of a tagged column, one <code>HAVING</code> line is added. See <a href="small-groups.html">small groups</a>.</p>
+      </div>
+      <div class="arrow"></div>
+
+      <div class="station rewrite">
+        <div class="head"><span class="tag">Step 2c · Customer pseudonyms</span><span class="file">step2_personal_data/customer_pseudonyms.py</span></div>
         <p>The customer tables are swapped for copies where each real id is replaced by a nickname. BigQuery makes the copies itself while it runs, so the AI's part of the query only ever sees nicknames. This happens for every user, the CEO too.</p>
         <p class="life">🏠 Like a coat check: you get ticket #72, never the hanger's location. Same coat, same ticket, every time.</p>
 <pre><span class="add">WITH _pseudonymized_users AS (</span>
 <span class="add">  SELECT * REPLACE (CONCAT('cust_', …SHA256(@pseudonym_salt + id)…) AS id)</span>  <span class="c">-- 48213 → cust_249e6e6fc97d</span>
 <span class="add">  FROM `…users` AS users),</span>
 <span class="add">_pseudonymized_orders AS ( …same for user_id… )</span>
-<span class="same">SELECT u.id, u.country, COUNT(DISTINCT o.order_id) AS orders</span>
+<span class="same">SELECT u.id, COUNT(DISTINCT o.order_id) AS orders</span>
 FROM <span class="add">_pseudonymized_users</span> AS u
 JOIN <span class="add">_pseudonymized_orders</span> AS o ON o.user_id = u.id   <span class="c">-- nickname = nickname, so the join still matches</span>
-<span class="same">GROUP BY u.id, u.country ORDER BY orders DESC LIMIT 3</span></pre>
+<span class="same">GROUP BY u.id ORDER BY orders DESC LIMIT 3</span></pre>
       </div>
       <div class="arrow"></div>
 
@@ -255,11 +267,11 @@ JOIN <span class="add">_pseudonymized_orders</span> AS o ON o.user_id = u.id   <
         <p>It receives the full rewritten SQL, plus the secret salt sent <i>alongside</i> it as <code>@pseudonym_salt</code>, never written into the SQL text or the log. At most 50 rows come back.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>id</th><th>country</th><th>orders</th></tr></thead>
+            <thead><tr><th>id</th><th>orders</th></tr></thead>
             <tbody>
-              <tr><td class="mono">cust_249e6e6fc97d</td><td>China</td><td>2</td></tr>
-              <tr><td class="mono">cust_267918d59c6e</td><td>Brasil</td><td>2</td></tr>
-              <tr><td class="mono">cust_34fed0dbdb6b</td><td>United States</td><td>2</td></tr>
+              <tr><td class="mono">cust_249e6e6fc97d</td><td>2</td></tr>
+              <tr><td class="mono">cust_267918d59c6e</td><td>2</td></tr>
+              <tr><td class="mono">cust_34fed0dbdb6b</td><td>2</td></tr>
             </tbody>
           </table>
         </div>
@@ -288,12 +300,14 @@ JOIN <span class="add">_pseudonymized_orders</span> AS o ON o.user_id = u.id   <
           <tr><td>1 · Guard</td><td class="mono">FROM …thelook_ecommerce.events</td><td class="msg">Table `…events` is not allowed. Use only these tables: …</td></tr>
           <tr><td>2a · Columns</td><td class="mono">SELECT email FROM users</td><td class="msg">Read only the columns listed in the schema. …</td></tr>
           <tr><td>2a · Columns</td><td class="mono">SELECT * FROM users</td><td class="msg">Name the columns you need instead of using *. COUNT(*) is fine.</td></tr>
+          <tr><td>2b · Small groups</td><td class="mono">SELECT id, city FROM users</td><td class="msg">`users.city` can be used only inside a total (COUNT, SUM, AVG ... with GROUP BY) …</td></tr>
+          <tr><td>2b · Small groups</td><td class="mono">SELECT ARRAY_AGG(city) FROM users</td><td class="msg">`users.city` can't be collected with ARRAY_AGG or STRING_AGG …</td></tr>
           <tr><td>3 · Brand scope</td><td class="mono">FROM …inventory_items</td><td class="msg">Table `…inventory_items` can't be limited to your brands, so the query was not run.</td></tr>
           <tr><td>4 · Size</td><td class="mono">a query over 1 GB</td><td class="msg">This query would scan 1.4 GB, over the 1.0 GB limit per query. …</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Steps 2b and 3 never stop a normal query and never tell the AI anything: they quietly rewrite it.</p>
+    <p class="note">Steps 2c and 3 never stop a normal query and never tell the AI anything: they quietly rewrite it. Step 2b stops listings, and quietly adds a <code>HAVING</code> to totals.</p>
   </section>
 
   <section>
@@ -313,9 +327,9 @@ JOIN <span class="add">_pseudonymized_orders</span> AS o ON o.user_id = u.id   <
   </section>
 
   <footer>
-    <div>Code: <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code> calls, in order, <code>QueryGuard.check</code> (<code>step1_guard.py</code>), <code>PersonalDataCheck.check</code> (<code>step2_personal_data/columns.py</code>), <code>CustomerPseudonyms.apply</code> (<code>step2_personal_data/customer_pseudonyms.py</code>), <code>BrandScope.apply</code> (<code>step3_brand_scope/brand_scope.py</code>), <code>_check_bytes</code>, then <code>BigQueryDatabase.execute</code> (<code>src/retail_agent/db/bigquery.py</code>). Wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
-    <div>Settings: <code>MAX_BYTES_BILLED</code> (1 GB), <code>MAX_ROWS</code> (50), <code>PSEUDONYM_SALT</code>, <code>USERS_PATH</code>. The original and rewritten SQL are logged as <code>SQL:</code> and <code>Rewritten SQL:</code> in <code>logs/retail-agent.log</code>.</div>
-    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Tickets: 08 (columns), 09 (pseudonyms).</div>
+    <div>Code: <code>QueryGateway.run</code> in <code>src/retail_agent/query_safety/gateway.py</code> calls, in order, <code>QueryGuard.check</code> (<code>step1_guard.py</code>), <code>PersonalDataCheck.check</code> (<code>step2_personal_data/columns.py</code>), <code>SmallGroups.apply</code> (<code>step2_personal_data/small_groups.py</code>), <code>CustomerPseudonyms.apply</code> (<code>step2_personal_data/customer_pseudonyms.py</code>), <code>BrandScope.apply</code> (<code>step3_brand_scope/brand_scope.py</code>), <code>_check_bytes</code>, then <code>BigQueryDatabase.execute</code> (<code>src/retail_agent/db/bigquery.py</code>). Wired in <code>assemble</code> (<code>src/retail_agent/app.py</code>).</div>
+    <div>Settings: <code>MAX_BYTES_BILLED</code> (1 GB), <code>MAX_ROWS</code> (50), <code>PSEUDONYM_SALT</code>, <code>MIN_GROUP_SIZE</code> (5), <code>USERS_PATH</code>. The original and rewritten SQL are logged as <code>SQL:</code> and <code>Rewritten SQL:</code> in <code>logs/retail-agent.log</code>.</div>
+    <div>Tests: <code>tests/test_step1_guard.py</code>, <code>tests/test_step2_personal_data.py</code>, <code>tests/test_step2_small_groups.py</code>, <code>tests/test_step2_customer_pseudonyms.py</code>, <code>tests/test_step3_brand_scope.py</code>. Tickets: 08 (columns), 09 (pseudonyms), 10 (small groups).</div>
     <div>See also <a href="sql-parser-rules.html">SQL parser rules</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="order-item-count.html">order item count</a>, <a href="sql-errors.html">SQL errors</a>, <a href="architecture.html">architecture</a>, <a href="small-groups.html">small groups</a>.</div>
   </footer>
 
