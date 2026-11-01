@@ -263,6 +263,30 @@ flowchart LR
 | Failure | If Langfuse is down, the SDK's last cached copy is used, and if there is none, the local `prompts/system.md`. | Prompt management is never a single point of failure. |
 | One tool | In production, Langfuse also takes over tracing and the LLM judge from LangSmith (used in the prototype), so traces, prompts and evaluations sit in one self-hosted tool. | One place to debug a bad answer, from the prompt version to the SQL. |
 
+## System learning loop (design only)
+
+The brief's system-level learning: the agent gets better for everyone from past interactions. (The user-level half is [User preferences](#user-preferences-design-only).) It isn't a new component: it joins the parts above into one weekly cycle, with a person approving every change, so the agent never teaches itself unchecked.
+
+```mermaid
+flowchart LR
+    use["① Real use<br/>traces"] --> find["② Find what went wrong or right<br/>alerts · LLM judge · 👍/👎"]
+    find -->|"good answer"| trio["③a Candidate Golden trio<br/>analyst approves"]
+    find -->|"bad answer"| fix["③b Fix: prompt rule in Langfuse,<br/>schema note, or code<br/>+ a regression case"]
+    trio --> gate["④ Evaluation gate<br/>Golden + regression exam<br/>must not score lower"]
+    fix --> gate
+    gate -->|"pass"| use
+```
+
+| Step | What happens | Designed in |
+|---|---|---|
+| ① Real use | Every question is a trace. | Observability |
+| ② Find | Alerts, the daily LLM judge sample and user feedback point to good and bad answers. | Metrics and alerts; Evaluation |
+| ③a Good → example | A report rated good becomes a candidate trio; an analyst approves, edits or rejects it. | Golden Knowledge |
+| ③b Bad → fix | An analyst or engineer turns the failure into a prompt rule (a new prompt version in Langfuse), a note in `schema.yaml`, or a code fix, and adds the trace to the regression set. | Persona and prompts; Evaluation |
+| ④ Gate | The change ships only if the Golden and regression exam doesn't score lower than before. | Evaluation |
+
+This cycle already ran by hand on the prototype. `TIMESTAMP_SUB … MONTH` failed a whole round twice in the traces, so a prompt rule now says to do month and quarter math on a DATE, and the next quarter questions ran first time. "Top 5 brands in Essen" was answered "no sales" when every group was hidden for privacy, so the gateway now adds a note to the result and the answer says the detail is hidden.
+
 ## Extensibility
 
 New capabilities (charts, emailing reports, web search for trends) plug in through the two patterns the prototype already uses:
