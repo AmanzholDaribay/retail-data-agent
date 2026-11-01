@@ -7,6 +7,7 @@
 A stopped query never reaches the database. Its message goes back to the model, so it can fix the SQL and try again.
 """
 
+import dataclasses
 import logging
 import time
 from typing import Any
@@ -74,7 +75,7 @@ class QueryGateway:
             # Step 4: size. Stop the query before it scans more than max_bytes.  -> _check_bytes below
             self._check_bytes(scoped_sql)
             # Every step passed: run the rewritten query, keeping at most max_rows rows.
-            result = self._database.execute(scoped_sql, self._max_rows)
+            result = dataclasses.replace(self._database.execute(scoped_sql, self._max_rows), sql=scoped_sql)
         except QueryRejected as error:
             logger.warning("SQL rejected: %s", error)
             raise

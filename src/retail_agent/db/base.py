@@ -8,6 +8,7 @@ class QueryResult:
     rows: list[tuple[Any, ...]]
     total_rows: int | None = None  # rows the query produced, before the row cap; None when unknown
     bytes_processed: int | None = None
+    sql: str | None = None  # the SQL that ran, after the gateway rewrote it; set by the gateway
 
     @property
     def truncated(self) -> bool:

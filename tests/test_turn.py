@@ -106,7 +106,10 @@ def test_a_failed_query_goes_back_to_the_model_which_fixes_it():
     assert isinstance(error_seen_by_model, ToolMessage)
     assert error_seen_by_model.text == "Error: Invalid timestamp: '2026-13-01'"
     assert result.answer == "Revenue is $100."
-    assert result.sql == [SqlRun(bad_sql, error="Invalid timestamp: '2026-13-01'"), SqlRun(good_sql, error=None)]
+    assert [(run.sql, run.error) for run in result.sql] == [(bad_sql, "Invalid timestamp: '2026-13-01'"), (good_sql, None)]
+    # The SQL BigQuery got is the gateway's rewrite: order_items is read with customer ids as pseudonyms.
+    assert result.sql[1].sent_sql == database.executed[1]
+    assert "@pseudonym_salt" in result.sql[1].sent_sql
     assert len(database.executed) == 2
 
 
@@ -120,7 +123,7 @@ def test_a_query_the_gateway_rejects_is_kept_with_the_reason():
 
     assert result.sql == [
         SqlRun(rejected, error="Name the columns you need instead of using *. COUNT(*) is fine."),
-        SqlRun(fixed, error=None),
+        SqlRun(fixed, error=None, sent_sql=fixed),
     ]
     assert len(database.executed) == 1  # the rejected query never reached the database
 

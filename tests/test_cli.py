@@ -1,10 +1,9 @@
-import pytest
-
 from retail_agent import cli
 from retail_agent.app import SqlRun, TurnResult
 
 REJECTED = "SELECT * FROM products"
 FIXED = "SELECT COUNT(id) AS n FROM products"
+SENT = "SELECT COUNT(id) AS n FROM products WHERE brand IN ('Levi's')"  # as the gateway rewrote it
 
 
 class OneAnswerApp:
@@ -15,7 +14,7 @@ class OneAnswerApp:
     def ask(self, question: str) -> TurnResult:
         return TurnResult(
             answer="There are 12 products.",
-            sql=[SqlRun(REJECTED, error="Name the columns you need instead of using *."), SqlRun(FIXED, error=None)],
+            sql=[SqlRun(REJECTED, error="Name the columns you need instead of using *."), SqlRun(FIXED, error=None, sent_sql=SENT)],
         )
 
 
@@ -31,25 +30,24 @@ def run_cli(monkeypatch, capsys, *flags: str) -> str:
     return capsys.readouterr().out
 
 
-def test_a_plain_run_shows_only_the_sql_that_ran(monkeypatch, capsys):
+def test_a_plain_run_shows_only_the_answer(monkeypatch, capsys):
     printed = run_cli(monkeypatch, capsys)
 
-    assert FIXED in printed
-    assert REJECTED not in printed
-    assert "SQL 1 of" not in printed  # one query ran, so one plain SQL block
     assert "There are 12 products." in printed
+    assert FIXED not in printed
+    assert REJECTED not in printed
+    assert SENT not in printed
 
 
 def test_verbose_shows_every_sql_with_its_outcome(monkeypatch, capsys):
     printed = run_cli(monkeypatch, capsys, "--verbose")
 
     assert f"{REJECTED}\n❌ Name the columns you need instead of using *." in printed
-    assert f"{FIXED}\n✅ ran" in printed
+    assert f"{FIXED}\n✅ ran\nSent to BigQuery:\n{SENT}" in printed
     assert printed.index(REJECTED) < printed.index(FIXED)
 
 
-@pytest.mark.parametrize("flags", [(), ("--verbose",)])
-def test_the_answer_comes_after_the_sql(monkeypatch, capsys, flags):
-    printed = run_cli(monkeypatch, capsys, *flags)
+def test_verbose_shows_the_answer_after_the_sql(monkeypatch, capsys):
+    printed = run_cli(monkeypatch, capsys, "--verbose")
 
-    assert printed.index(FIXED) < printed.index("There are 12 products.")
+    assert printed.index(SENT) < printed.index("There are 12 products.")

@@ -13,8 +13,9 @@ from retail_agent.result_format import format_result
 
 
 def make_run_sql(gateway: QueryGateway) -> BaseTool:
-    @tool
-    def run_sql(sql: str) -> str:
+    # content_and_artifact: the model reads the table; the SQL sent to BigQuery travels beside it for --verbose only.
+    @tool(response_format="content_and_artifact")
+    def run_sql(sql: str) -> tuple[str, str | None]:
         """Run one SELECT statement against the retail database and return the rows as a table.
 
         Call it several times in one reply for queries that don't depend on each other."""
@@ -22,8 +23,8 @@ def make_run_sql(gateway: QueryGateway) -> BaseTool:
             result = gateway.run(sql)
         except QueryError as error:
             # The model reads the error and sends corrected SQL. Other exceptions are bugs and still raise.
-            return f"Error: {error}"
-        return format_result(result)
+            return f"Error: {error}", None
+        return format_result(result), result.sql
 
     return run_sql
 

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 class SqlRun:
     sql: str  # as the model wrote it
     error: str | None  # why it didn't run (a guard rejection or a BigQuery error); None when it ran
+    sent_sql: str | None = None  # as BigQuery got it, after the gateway's rewrites; None when it didn't run
 
 
 @dataclass(frozen=True)
@@ -97,8 +98,10 @@ class App:
             for message in turn
             if isinstance(message, ToolMessage) and message.text.startswith("Error:")
         }
+        # The run_sql artifact: the SQL the gateway sent to BigQuery. The model never sees it.
+        sent = {message.tool_call_id: message.artifact for message in turn if isinstance(message, ToolMessage)}
         sql = [
-            SqlRun(sql=call["args"]["sql"], error=errors.get(call["id"]))
+            SqlRun(sql=call["args"]["sql"], error=errors.get(call["id"]), sent_sql=sent.get(call["id"]))
             for message in turn
             if isinstance(message, AIMessage)
             for call in message.tool_calls

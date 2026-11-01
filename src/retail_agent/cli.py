@@ -67,14 +67,15 @@ def main() -> None:
             logger.exception("Question failed")
             print(f"\n{_describe_failure(error)}\nDetails: {LOG_FILE}")
             continue
-        # The plain run shows only the SQL that ran; --verbose shows every attempt, and why one didn't run.
-        shown = result.sql if args.verbose else [run for run in result.sql if run.error is None]
-        for number, run in enumerate(shown, start=1):
-            title = "SQL" if len(shown) == 1 else f"SQL {number} of {len(shown)}"
-            body = run.sql
-            if args.verbose:
-                body += "\n✅ ran" if run.error is None else f"\n❌ {run.error}"
-            print(_block(title, body, CYAN))
+        # The plain run shows only the answer. --verbose shows every SQL the model tried, whether it ran or why not,
+        # and the SQL BigQuery got after the gateway's rewrites (pseudonyms, brand scope).
+        if args.verbose:
+            for number, run in enumerate(result.sql, start=1):
+                title = "SQL" if len(result.sql) == 1 else f"SQL {number} of {len(result.sql)}"
+                body = run.sql + ("\n✅ ran" if run.error is None else f"\n❌ {run.error}")
+                if run.sent_sql is not None:
+                    body += f"\nSent to BigQuery:\n{run.sent_sql}"
+                print(_block(title, body, CYAN))
         print(_block("ANSWER", result.answer, GREEN))
 
 
