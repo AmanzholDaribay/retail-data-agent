@@ -159,7 +159,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
   <section class="short" aria-label="In short">
     <h2>In short</h2>
     <ol>
-      <li><span><b>Getting in:</b> an analyst approves a good answer, its SQL is checked, and it's stored as a trio with its brands and a vector (a list of numbers that captures the question's meaning).</span></li>
+      <li><span><b>Getting in:</b> an analyst approves a good answer, and it's stored as a trio with its brands and a vector (a list of numbers that captures the question's meaning).</span></li>
       <li><span><b>Getting out:</b> before the first model call, the question is searched two ways at once, by meaning and by exact words, and the best 3 trios go into the prompt.</span></li>
       <li><span><b>Same access rules:</b> the search only looks at trios within the user's brands, the same rule as the query gateway.</span></li>
       <li><span><b>Kept fresh:</b> every night each trio's SQL is dry-run; one that breaks is set aside for an analyst.</span></li>
@@ -175,7 +175,7 @@ footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--mu
         <div class="arrow">proposed</div>
         <div class="box is-human dashed"><b>Analyst review</b><small>approve, edit, or reject</small></div>
         <div class="arrow">approved</div>
-        <div class="box is-search"><b>Check and embed</b><small>dry-run the SQL (free) · record its brands · Gemini embedding of the question</small></div>
+        <div class="box is-search"><b>Tag and embed</b><small>record its brands · Gemini embedding of the question · save. No SQL re-check: it already ran when the answer was made.</small></div>
         <div class="arrow">insert</div>
       </div>
       <div class="lane">

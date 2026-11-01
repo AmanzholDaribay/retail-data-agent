@@ -143,7 +143,7 @@ The brief's bucket of historical **trios**: a question, the SQL an analyst wrote
 flowchart LR
     subgraph in["① Getting in (over time)"]
         good["Seed trios, or a saved report<br/>a user rated good"] --> review["Analyst review<br/>approve · edit · reject"]
-        review --> check["Dry-run the SQL<br/>record brands<br/>embed the question"]
+        review --> check["Record brands<br/>embed the question<br/>save"]
     end
     check --> bucket[("golden.trios<br/>BigQuery + vector index")]
 
@@ -163,7 +163,7 @@ flowchart LR
 |---|---|---|
 | Store | One BigQuery table `golden.trios` (`question`, `sql`, `answer`, `brands`, `embedding`, `status`, `approved_by`, `approved_at`) with a vector index on `embedding` and a search index on `question`. | Same GCP project and auth as the data; no new database to run. Vertex AI Vector Search is the step up if the bucket outgrows it. |
 | Embeddings | A Gemini embedding model, through Vertex AI or `ML.GENERATE_EMBEDDING` in BigQuery. The question is embedded; the whole trio is returned. | New questions are compared with old questions. Same provider as the chat model. |
-| Getting in | Seed with analysts' trios. Later, a saved report that a user rated good becomes a candidate (the report store already keeps question, SQL and answer). An analyst approves, edits or rejects it. On approval the SQL is dry-run (free), its brands are recorded and the question is embedded. | Only human-approved work becomes "golden"; the agent never teaches itself unchecked. |
+| Getting in | Seed with analysts' trios. Later, a saved report that a user rated good becomes a candidate (the report store already keeps question, SQL and answer). An analyst approves, edits or rejects it. On approval its brands are recorded, the question is embedded and the trio is saved. The SQL isn't re-checked here: it already ran when the report or the analyst's work was made. | Only human-approved work becomes "golden"; the agent never teaches itself unchecked. |
 | Getting out | Before the first model call: embed the question once, then one BigQuery query searches by meaning (`VECTOR_SEARCH`) and by words (`SEARCH`), merges the two rankings (reciprocal rank fusion) and keeps at most 3 trios above a similarity cutoff. They fill a `{golden-examples}` placeholder in `prompts/system.md`, labelled as examples rather than current data. | 0 extra LLM calls, so a question stays within 2–5 calls; a search tool would add one per question. Meaning catches "customers leaving" ≈ "churn"; words catch "Q1", "Levi's", "Texas". No example beats a weak one. |
 | Brand guardrail | Each trio is tagged with the brands its SQL and answer cover. The search query only returns trios whose brands are all within the user's brands (`users.yaml`), or trios an analyst marked **method only** (figures removed from the answer). | A trio's answer holds real numbers; without this, a Calvin Klein figure could reach the Levi's manager's prompt. The same rule as the query gateway, applied before anything reaches the model. |
 | Still guarded | SQL the agent writes after reading a trio goes through the query gateway like any other. | Trios guide the model; they never bypass the guard, PII rules, brand scope or byte cap. |
