@@ -17,6 +17,7 @@ from retail_agent.observability import LlmCallLogger
 from retail_agent.query_safety.gateway import QueryGateway
 from retail_agent.query_safety.step1_guard import QueryGuard
 from retail_agent.query_safety.step2_personal_data.columns import PersonalDataCheck
+from retail_agent.query_safety.step2_personal_data.customer_pseudonyms import SALT_PARAMETER, CustomerPseudonyms
 from retail_agent.query_safety.step3_brand_scope.brand_scope import BrandScope
 from retail_agent.schema import Schema, load_schema
 from retail_agent.tools import make_run_sql
@@ -100,7 +101,11 @@ def build_app(settings: Settings, user: User) -> App:
     """Build the app with the real model and database, for `user`."""
     return assemble(
         model=build_model(settings, settings.llm_model),
-        database=BigQueryDatabase(settings.gcp_project, settings.max_bytes_billed),
+        database=BigQueryDatabase(
+            settings.gcp_project,
+            settings.max_bytes_billed,
+            query_parameters={SALT_PARAMETER: settings.pseudonym_salt.get_secret_value()},
+        ),
         schema=load_schema(settings.schema_path),
         prompt_template=settings.prompt_path.read_text(),
         settings=settings,
@@ -121,8 +126,11 @@ def assemble(
     """Wire the app from its parts. Tests call this directly with fakes."""
     guard = QueryGuard(database.dialect, allowed_tables=[schema.qualified_name(table) for table in schema.tables])
     personal_data = PersonalDataCheck(database.dialect, schema)
+    pseudonyms = CustomerPseudonyms(database.dialect, schema.dataset)
     scope = BrandScope(database.dialect, schema.dataset, user.brands)
-    gateway = QueryGateway(database, guard, personal_data, settings.max_rows, settings.max_bytes_billed, scope)
+    gateway = QueryGateway(
+        database, guard, personal_data, pseudonyms, settings.max_rows, settings.max_bytes_billed, scope
+    )
     schema_text = schema.render()
     system_prompt = prompt_template.format(dialect=database.dialect, schema=schema_text)
     agent = build_agent(

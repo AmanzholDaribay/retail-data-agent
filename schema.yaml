@@ -2,8 +2,9 @@
 # where a column name doesn't explain itself. Loaded once at startup into the system prompt.
 #
 # Direct identifiers in `users` (first/last name, email, street address, postal code,
-# latitude/longitude) are left out on purpose. Leaving them out is not enforcement:
-# step 3 blocks them in the query gateway.
+# latitude/longitude) are left out on purpose, and the query gateway blocks any column not
+# listed here. Customer ids (users.id, orders.user_id, order_items.user_id) are listed as
+# STRING: the gateway replaces them with pseudonyms before the model's SQL reads them.
 
 dataset: bigquery-public-data.thelook_ecommerce
 
@@ -12,7 +13,7 @@ tables:
     description: One row per customer order.
     columns:
       order_id: {type: INT64}
-      user_id: {type: INT64, description: Joins users.id}
+      user_id: {type: STRING, description: "Customer pseudonym such as cust_72ac84091163; the real id is never shown. Joins users.id"}
       status: {type: STRING, description: "One of Processing, Shipped, Complete, Cancelled, Returned"}
       gender: {type: STRING, description: "Customer gender, M or F"}
       created_at: {type: TIMESTAMP, description: When the order was placed (UTC)}
@@ -28,7 +29,7 @@ tables:
     columns:
       id: {type: INT64}
       order_id: {type: INT64, description: Joins orders.order_id}
-      user_id: {type: INT64, description: Joins users.id}
+      user_id: {type: STRING, description: "Customer pseudonym such as cust_72ac84091163; the real id is never shown. Joins users.id"}
       product_id: {type: INT64, description: Joins products.id}
       inventory_item_id: {type: INT64}
       status: {type: STRING, description: "One of Processing, Shipped, Complete, Cancelled, Returned"}
@@ -54,7 +55,7 @@ tables:
   users:
     description: Customers.
     columns:
-      id: {type: INT64}
+      id: {type: STRING, description: "Customer pseudonym such as cust_72ac84091163; the real id is never shown"}
       age: {type: INT64}
       gender: {type: STRING, description: M or F}
       city: {type: STRING}

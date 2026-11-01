@@ -1,6 +1,12 @@
+import secrets
 from pathlib import Path
 
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
+
+
+def _random_salt() -> SecretStr:
+    return SecretStr(secrets.token_hex(16))
 
 
 class Settings(BaseSettings):
@@ -26,3 +32,12 @@ class Settings(BaseSettings):
     schema_path: Path = Path("schema.yaml")
     prompt_path: Path = Path("prompts/system.md")
     users_path: Path = Path("users.yaml")
+    # The secret behind customer pseudonyms (cust_72ac84091163). Unset or empty: a random one per run, so
+    # pseudonyms stay the same within a run but change between runs.
+    pseudonym_salt: SecretStr = Field(default_factory=_random_salt)
+
+    @field_validator("pseudonym_salt")
+    @classmethod
+    def _replace_empty_salt(cls, salt: SecretStr) -> SecretStr:
+        """An empty salt would make every pseudonym a plain hash of the id, which anyone can recompute."""
+        return salt if salt.get_secret_value() else _random_salt()

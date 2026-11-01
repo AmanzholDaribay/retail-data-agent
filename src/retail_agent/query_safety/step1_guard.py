@@ -1,11 +1,15 @@
 """Step 1 of 4: the guard. It only reads the SQL and never changes it.
 
-Like a librarian at the reading-room door, it checks 4 things in order and stops at the first one that fails:
+Like a librarian at the reading-room door, it checks 5 things in order and stops at the first one that fails:
 
   1. Exactly one statement.                          ❌ SELECT 1; DROP TABLE orders
   2. A SELECT (or a UNION of SELECTs), nothing else. ❌ DELETE FROM orders
-  3. Real tables, not table functions.               ❌ FROM ML.PREDICT(...)
-  4. Only the allowed tables.                        ❌ FROM other_project.secrets.salaries
+  3. No query parameters or system variables.        ❌ SELECT @pseudonym_salt
+  4. Real tables, not table functions.               ❌ FROM ML.PREDICT(...)
+  5. Only the allowed tables.                        ❌ FROM other_project.secrets.salaries
+
+Rule 3 matters because our own SQL sends a secret to BigQuery as a parameter (the salt behind customer
+pseudonyms, step 2). If the model could write `SELECT @pseudonym_salt`, BigQuery would hand the secret back.
 
 SQL that sqlglot can't parse is stopped too: a query we can't read is a query we can't check.
 
@@ -39,6 +43,7 @@ class QueryGuard:
         """Raise QueryRejected unless the query passes every rule, in this order."""
         statement = self._parse_one_statement(sql)
         _require_select(statement)
+        _reject_parameters(statement)
         for table in statement.find_all(exp.Table):
             self._reject_table_function(table)
             if is_with_name(table, statement):
@@ -72,6 +77,14 @@ def _require_select(statement: exp.Expr) -> None:
     """A query (SELECT, or a UNION of SELECTs); no DML, DDL or scripting."""
     if not isinstance(statement, exp.Query):
         raise QueryRejected("Only SELECT queries are allowed.")
+
+
+def _reject_parameters(statement: exp.Expr) -> None:
+    """`@name`, `?` and `@@name` read values sent with the query, not data. The model has no use for them."""
+    if statement.find(exp.Parameter, exp.Placeholder):
+        raise QueryRejected(
+            "Query parameters and system variables (@name, ?, @@name) are not allowed. Write values into the SQL."
+        )
 
 
 def is_with_name(table: exp.Table, statement: exp.Expr) -> bool:

@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+import pytest
 from fakes import FakeDatabase, ScriptedChatModel, run_sql_call
 from harness import ORDER_ITEMS, assemble_app, tool_output_seen_by_model
 from langchain_core.messages import AIMessage
@@ -73,7 +74,7 @@ def test_a_name_defined_with_with_is_not_mistaken_for_a_table():
 
     model_output_for(sql, database)
 
-    assert database.executed == [sql]
+    assert len(database.executed) == 1  # it reached the database (rewritten: customer ids become pseudonyms)
 
 
 def test_a_table_function_is_rejected():
@@ -127,3 +128,14 @@ def test_a_table_function_without_a_plain_name_is_named_in_the_message():
     output = model_output_for("SELECT * FROM ML.PREDICT(MODEL `my-project.models.churn`, (SELECT 1 AS x))")
 
     assert output == "Error: Read only from tables. Table functions such as PREDICT are not allowed."
+
+
+@pytest.mark.parametrize("value", ["@pseudonym_salt", "?", "@@project_id"])
+def test_query_parameters_and_system_variables_are_rejected(value):
+    """The salt reaches BigQuery as @pseudonym_salt, so the model must not be able to read a parameter."""
+    database = FakeDatabase([])
+
+    output = model_output_for(f"SELECT {value} AS v FROM {ORDER_ITEMS}", database)
+
+    assert output.startswith("Error: Query parameters and system variables")
+    assert database.executed == []

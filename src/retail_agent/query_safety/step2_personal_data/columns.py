@@ -1,4 +1,4 @@
-"""Step 2 of 4: personal data. Step 1 asked "which tables?"; this asks "which columns?". It never changes the SQL.
+"""Step 2, part 1: personal-data columns. Step 1 asked "which tables?"; this asks "which columns?". It never changes the SQL.
 
 Like a guest list at a party: schema.yaml lists the columns that may be read. Personal columns (names, email,
 street address, postal code, latitude/longitude) were left off on purpose, so they can't be read, and nor can

@@ -45,12 +45,14 @@ class BigQueryDatabase:
 
     dialect = "bigquery"
 
-    def __init__(self, project: str, max_bytes_billed: int) -> None:
+    def __init__(self, project: str, max_bytes_billed: int, query_parameters: dict[str, str]) -> None:
+        """`query_parameters` are sent with every query and dry run, e.g. {"pseudonym_salt": ...} for @pseudonym_salt."""
         self._client = bigquery.Client(project=project)
-        self._job_config = bigquery.QueryJobConfig(maximum_bytes_billed=max_bytes_billed)
+        parameters = [bigquery.ScalarQueryParameter(name, "STRING", value) for name, value in query_parameters.items()]
+        self._job_config = bigquery.QueryJobConfig(maximum_bytes_billed=max_bytes_billed, query_parameters=parameters)
         # Free: BigQuery validates and plans the query without running it. The cache is off, or a
         # cached query would report 0 bytes.
-        self._dry_run_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+        self._dry_run_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False, query_parameters=parameters)
 
     def execute(self, sql: str, max_rows: int) -> QueryResult:
         try:

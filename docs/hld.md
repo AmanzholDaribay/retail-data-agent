@@ -45,7 +45,7 @@ flowchart LR
     class confirm,report_tools,store,langsmith planned
 ```
 
-Dashed boxes are planned. The gateway box is built with its guard, brand scope and row cap; its PII layer is planned. `user → brands` is `users.yaml`.
+Dashed boxes are planned. The gateway box is built with its guard, brand scope, row cap and the first two PII layers (column allow-list, customer pseudonyms); the check on returned rows is planned. `user → brands` is `users.yaml`.
 
 ## Components
 
@@ -57,7 +57,7 @@ Dashed boxes are planned. The gateway box is built with its guard, brand scope a
 | LLM | A LangChain chat model built from config (`<provider>:<model>`). Default `google_genai:gemini-3.8-flash`. | `llm.py` | built |
 | Call budget | Limits a question to `MAX_LLM_CALLS` model calls (default 5; a normal question uses 2) to stay within Gemini's free tier. The last allowed call gets no tools, so it answers from the results already fetched. | `agent.py` | built |
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
-| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, then the brand scope, then a dry run against the byte limit, then the query. | `query_safety/` (`gateway.py`, `step1_guard.py`, `step2_personal_data/columns.py`, `step3_brand_scope/brand_scope.py`) | built (guard, brand scope, byte limit, row cap); PII planned |
+| Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, the personal-data step (column allow-list, then customer pseudonyms), the brand scope, a dry run against the byte limit, then the query. | `query_safety/` (`gateway.py`, `step1_guard.py`, `step2_personal_data/`, `step3_brand_scope/`) | built (guard, column allow-list, pseudonyms, brand scope, byte limit, row cap); result checks planned |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
 | Schema | `schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
 | Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time. | — | planned |
@@ -122,7 +122,7 @@ Each layer is enforced in code; the prompt is only the first line.
 | Query guard | The parsed query must be a single SELECT over the 4 allowed tables; DML, DDL, scripting, other tables and table functions are rejected. A free dry run rejects anything above the byte limit before it costs anything. | built |
 | Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. Done by rewriting the SQL (`query_safety/step3_brand_scope/brand_scope.py`). For a brand manager, `orders.num_of_item` is recounted from their own items (`query_safety/step3_brand_scope/order_item_count.py`). | built |
 | PII protection | PII columns are tagged in `schema.yaml` and blocked based on the parsed query, not name matching; results are checked again before rows reach the model. Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. | planned |
-| Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. | planned |
+| Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. Done by rewriting the SQL for every user (`step2_personal_data/customer_pseudonyms.py`); the salt reaches BigQuery only as a query parameter. | built |
 | Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. | planned |
 | Report ownership | Only a report's author can see or delete it, enforced in the store query. | planned |
 
