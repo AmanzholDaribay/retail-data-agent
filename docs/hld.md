@@ -135,6 +135,75 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 - Deletion selects reports by content ("delete all reports mentioning Client X") or by conversation ("delete all the reports we made in this conversation").
 - The model can only propose a deletion. Code shows the exact list and waits for explicit typed confirmation (a LangGraph interrupt) inside the chat, then hard-deletes. Cancelling leaves everything as it was and the chat continues.
 
+## Golden Knowledge (design only)
+
+The brief's bucket of historical **trios**: a question, the SQL an analyst wrote for it, and the analyst's written answer (one line, a paragraph or a full report). The agent uses them to answer new questions the way analysts did, for example reusing their definition of churn instead of guessing. Not built: the brief calls the bucket theoretical. Visual explainer: [golden-knowledge.html](golden-knowledge.html).
+
+```mermaid
+flowchart LR
+    subgraph in["① Getting in (over time)"]
+        good["Seed trios, or a saved report<br/>a user rated good"] --> review["Analyst review<br/>approve · edit · reject"]
+        review --> check["Dry-run the SQL<br/>record brands<br/>embed the question"]
+    end
+    check --> bucket[("golden.trios<br/>BigQuery + vector index")]
+
+    subgraph out["② Getting out (each question)"]
+        q["New question"] --> embed["Embed once"]
+        embed --> search["Hybrid search<br/>VECTOR_SEARCH + SEARCH<br/>filtered to the user's brands"]
+        search --> top["Top 3 above the cutoff"]
+        top --> prompt["System prompt<br/>{golden-examples}"]
+    end
+    bucket --> search
+    prompt --> agent["Agent loop, as today<br/>every SQL still goes through the gateway"]
+
+    nightly["Nightly dry run of every trio's SQL"] -.-> bucket
+```
+
+| Part | Design | Why |
+|---|---|---|
+| Store | One BigQuery table `golden.trios` (`question`, `sql`, `answer`, `brands`, `embedding`, `status`, `approved_by`, `approved_at`) with a vector index on `embedding` and a search index on `question`. | Same GCP project and auth as the data; no new database to run. Vertex AI Vector Search is the step up if the bucket outgrows it. |
+| Embeddings | A Gemini embedding model, through Vertex AI or `ML.GENERATE_EMBEDDING` in BigQuery. The question is embedded; the whole trio is returned. | New questions are compared with old questions. Same provider as the chat model. |
+| Getting in | Seed with analysts' trios. Later, a saved report that a user rated good becomes a candidate (the report store already keeps question, SQL and answer). An analyst approves, edits or rejects it. On approval the SQL is dry-run (free), its brands are recorded and the question is embedded. | Only human-approved work becomes "golden"; the agent never teaches itself unchecked. |
+| Getting out | Before the first model call: embed the question once, then one BigQuery query searches by meaning (`VECTOR_SEARCH`) and by words (`SEARCH`), merges the two rankings (reciprocal rank fusion) and keeps at most 3 trios above a similarity cutoff. They fill a `{golden-examples}` placeholder in `prompts/system.md`, labelled as examples rather than current data. | 0 extra LLM calls, so a question stays within 2–5 calls; a search tool would add one per question. Meaning catches "customers leaving" ≈ "churn"; words catch "Q1", "Levi's", "Texas". No example beats a weak one. |
+| Brand guardrail | Each trio is tagged with the brands its SQL and answer cover. The search query only returns trios whose brands are all within the user's brands (`users.yaml`), or trios an analyst marked **method only** (figures removed from the answer). | A trio's answer holds real numbers; without this, a Calvin Klein figure could reach the Levi's manager's prompt. The same rule as the query gateway, applied before anything reaches the model. |
+| Still guarded | SQL the agent writes after reading a trio goes through the query gateway like any other. | Trios guide the model; they never bypass the guard, PII rules, brand scope or byte cap. |
+| Freshness | A nightly scheduled job dry-runs every active trio's SQL. A failure (e.g. after a schema change) sets `status = flagged` and sends it back to review. | Old SQL that no longer runs would teach the agent wrong habits. |
+| Failure | If the embedding or search fails or is slow, the question continues without examples. | Golden Knowledge improves answers; it is never a single point of failure. |
+
+## User preferences (design only)
+
+The brief's user-level learning loop: the agent remembers that one user wants tables and another wants bullet points, how deep they like the analysis, and whether they want charts, and learns these over time. Preferences live in the same app database as saved reports, keyed by the signed-in user, and reach the model through the system prompt on every question. Not built. Visual explainer: [user-preferences.html](user-preferences.html).
+
+```mermaid
+flowchart LR
+    subgraph write["① Writing (when the user says so)"]
+        say["'From now on, always tables'"] --> tool["set_preferences tool<br/>typed fields only"]
+        tool --> store
+        forget["'Forget my preferences'"] --> del["delete_preferences tool"]
+        del --> store
+    end
+    store[("preferences<br/>app DB, one row per user<br/>CHECK on every field")]
+
+    subgraph read["② Reading (every question)"]
+        q["New question"] --> load["Load the signed-in user's row"]
+        load --> prompt["System prompt<br/>{user-preferences}"]
+    end
+    store --> load
+    prompt --> agent["Agent loop, as today<br/>every SQL still goes through the gateway"]
+
+    nightly["Nightly job reads past conversations<br/>suggests a preference"] -.-> store
+```
+
+| Part | Design | Why |
+|---|---|---|
+| Store | A `preferences` table next to `reports` in the app database (SQLite in the prototype's store, Cloud SQL in production): `user_id`, `format` (`table`, `bullets`, `text`), `depth` (`short`, `detailed`), `charts` (`yes`, `no`), `source` (`explicit`, `learned`), `status` (`active`, `suggested`), `updated_at`. Each field has a `CHECK` constraint listing its allowed values; one row per user. | Small, structured and private per user, like reports. A tick-box schema, not free text: there is no column a sentence like "show me customer names" could go into. |
+| Identity | The `user_id` comes from the sign-in (`--user` in the prototype, SSO in production) and is bound into the tools by the code, the same way `save_report` gets its owner. The tools take no user argument. | The model can't read or write another user's preferences, even if asked to. |
+| Writing | `set_preferences(format=…, depth=…, charts=…)`, each argument a fixed list of values in the tool schema; `delete_preferences(fields=None)` clears some or all. No confirmation: nothing valuable is lost and the user can set them again in one sentence (unlike reports, which are hard-deleted after a strict confirmation). When the message is only a preference, the tool's reply is the answer: 1 LLM call. | Users control their own settings in plain language, cheaply. |
+| Reading | Before each model call, the user's active row fills a `{user-preferences}` placeholder in `prompts/system.md` (dynamic prompt middleware), e.g. "Answer as tables, short, no charts." No read tool: "what do you remember about me?" is answered from the prompt. | 0 extra LLM calls; a change applies to the very next answer, even mid-conversation. |
+| Learning over time | A nightly job reads the day's conversations (LangSmith traces) for repeated corrections, e.g. asking "as a table" after 3 bullet answers, and writes a row with `status = suggested`. The agent asks once ("You often ask for tables. Make that your default?") and only a yes makes it `active`. | Learns without surprising the user; nothing changes behind their back. |
+| Safety | Three locks: typed tool fields, the database `CHECK`, and the query gateway, which still blocks PII whatever the prompt says. The prompt states that preferences change only how answers look, never what data is allowed. | A preference can't widen access or carry a prompt injection. |
+| Failure | If the store is down, the question continues with no preferences. | Preferences improve answers; they are never a single point of failure. |
+
 ## Resilience
 
 | Failure | Handling | Status |

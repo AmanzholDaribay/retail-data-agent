@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Golden Knowledge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; two lanes (getting trios in, getting them out), the brand fork, an example, rails, the stored fields. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --fg: #17232b;
+  --muted: #5a6b76;
+  --line: #d3dce1;
+  --human: #5b4f8a;  --human-soft: #ece9f5;  /* violet: analysts approve */
+  --store: #1f6f8b;  --store-soft: #e3f0f4;  /* blue: the bucket in BigQuery */
+  --search: #a35a12; --search-soft: #f8ecdf; /* amber: embedding and search */
+  --ok: #2c6b3f;     --ok-soft: #e4f1e7;     /* green: reaches the prompt */
+  --stop: #a3352b;   --stop-soft: #f8e5e2;   /* red: filtered out */
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+    --human: #b3a8e6; --human-soft: #28243d; --store: #6cc0dc; --store-soft: #16323d;
+    --search: #e7a464; --search-soft: #3a2a1a; --ok: #7fcf96; --ok-soft: #1b3324;
+    --stop: #f08a7e; --stop-soft: #3a1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181d; --surface: #182229; --fg: #e3eaee; --muted: #93a4ae; --line: #2b3a43;
+  --human: #b3a8e6; --human-soft: #28243d; --store: #6cc0dc; --store-soft: #16323d;
+  --search: #e7a464; --search-soft: #3a2a1a; --ok: #7fcf96; --ok-soft: #1b3324;
+  --stop: #f08a7e; --stop-soft: #3a1d1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--store); }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.note { color: var(--muted); font-size: 0.9rem; }
+.status {
+  justify-self: start; font: 600 0.75rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--human); background: var(--human-soft); border: 1.5px dashed var(--human); border-radius: 999px; padding: 6px 12px;
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; display: inline-block; }
+
+.short ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: s; }
+.short li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; counter-increment: s; }
+.short li::before {
+  content: counter(s); width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font: 600 0.8rem/1 var(--font-mono);
+}
+
+/* role-colored boxes */
+.box {
+  border: 1.5px solid var(--k, var(--line)); background: var(--k-soft, var(--surface));
+  border-radius: 10px; padding: 10px 14px; display: grid; gap: 4px; min-width: 0;
+}
+.box small { color: var(--muted); font-size: 0.84rem; }
+.box.dashed { border-style: dashed; }
+.is-human { --k: var(--human); --k-soft: var(--human-soft); }
+.is-store { --k: var(--store); --k-soft: var(--store-soft); }
+.is-search { --k: var(--search); --k-soft: var(--search-soft); }
+.is-ok { --k: var(--ok); --k-soft: var(--ok-soft); }
+.is-stop { --k: var(--stop); --k-soft: var(--stop-soft); }
+
+/* two lanes meeting at the bucket */
+.lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.lane { display: grid; gap: 0; min-width: 0; }
+.lane-title { font: 600 0.8rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding-bottom: 10px; }
+.arrow { display: grid; justify-items: center; color: var(--muted); font: 0.78rem/1.2 var(--font-mono); padding: 3px 0; text-align: center; }
+.arrow::before { content: ""; width: 0; height: 14px; border-left: 1.5px solid var(--line); }
+.arrow::after { content: "▼"; font-size: 0.65rem; color: var(--line); }
+.bucket { margin-top: 18px; text-align: center; }
+.bucket b { font-size: 1.05rem; }
+
+/* fork */
+.fork { display: grid; gap: 0; justify-items: center; }
+.fork > .box { width: min(560px, 100%); }
+.question { border: 1.5px dashed var(--muted); border-radius: 999px; padding: 8px 18px; background: var(--surface); font-weight: 600; text-align: center; }
+.branches { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; }
+.branch { display: grid; justify-items: center; min-width: 0; }
+.branch > .box { width: 100%; }
+.label { font: 600 0.8rem/1 var(--font-mono); color: var(--muted); padding: 6px 0; }
+
+/* rails */
+.rails { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.rail { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 4px; align-content: start; }
+.rail b { font: 600 1.6rem/1.1 var(--font-mono); }
+.rail h3 { font-size: 0.95rem; }
+.rail p { font-size: 0.86rem; color: var(--muted); }
+
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--line); overflow-x: auto; font: 0.82rem/1.55 var(--font-mono); }
+pre .c { color: var(--muted); }
+pre .k { color: var(--search); font-weight: 500; }
+
+.table-wrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+td.mono { font-family: var(--font-mono); font-size: 0.84rem; white-space: nowrap; }
+tr.out td { background: var(--stop-soft); color: var(--stop); }
+tr.in td { background: var(--ok-soft); }
+
+.rule { border-left: 4px solid var(--fg); background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 20px; display: grid; gap: 6px; }
+footer { border-top: 1.5px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .lanes, .branches { grid-template-columns: 1fr; }
+  .rails { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">retail data agent · requirement 1 · as of 2026-11-01</div>
+    <span class="status">Design only · not built in the prototype</span>
+    <h1>How does the agent learn from analysts' past work?</h1>
+    <p class="lede">Analysts have answered many questions before. Each answer is saved as a <b>trio</b>: the question, the SQL they wrote, and their written answer. Together the trios are the <b>Golden Knowledge</b> bucket. Before the agent writes any SQL, it looks up the few trios most like the new question and follows the analysts' approach, but only trios the user is allowed to see. See also <a href="architecture.html">the architecture</a> and <a href="brand-scoping.html">brand scoping</a>.</p>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--human);background:var(--human-soft)"></i>an analyst decides</span>
+      <span><i class="sw" style="border-color:var(--store);background:var(--store-soft)"></i>stored in BigQuery</span>
+      <span><i class="sw" style="border-color:var(--search);background:var(--search-soft)"></i>embedding and search</span>
+      <span><i class="sw" style="border-color:var(--ok);background:var(--ok-soft)"></i>reaches the prompt</span>
+      <span><i class="sw" style="border-color:var(--stop);background:var(--stop-soft)"></i>filtered out</span>
+    </div>
+  </header>
+
+  <section class="short" aria-label="In short">
+    <h2>In short</h2>
+    <ol>
+      <li><span><b>Getting in:</b> an analyst approves a good answer, its SQL is checked, and it's stored as a trio with its brands and a vector (a list of numbers that captures the question's meaning).</span></li>
+      <li><span><b>Getting out:</b> before the first model call, the question is searched two ways at once, by meaning and by exact words, and the best 3 trios go into the prompt.</span></li>
+      <li><span><b>Same access rules:</b> the search only looks at trios within the user's brands, the same rule as the query gateway.</span></li>
+      <li><span><b>Kept fresh:</b> every night each trio's SQL is dry-run; one that breaks is set aside for an analyst.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The picture: two lanes into one bucket</h2>
+    <div class="lanes">
+      <div class="lane">
+        <div class="lane-title">① Getting in (over time)</div>
+        <div class="box is-human"><b>A good answer</b><small>a seed trio from analysts, or a saved report someone liked</small></div>
+        <div class="arrow">proposed</div>
+        <div class="box is-human dashed"><b>Analyst review</b><small>approve, edit, or reject</small></div>
+        <div class="arrow">approved</div>
+        <div class="box is-search"><b>Check and embed</b><small>dry-run the SQL (free) · record its brands · Gemini embedding of the question</small></div>
+        <div class="arrow">insert</div>
+      </div>
+      <div class="lane">
+        <div class="lane-title">② Getting out (each question)</div>
+        <div class="box is-store"><b>New question</b><small>"Why did churn spike last month?"</small></div>
+        <div class="arrow">embed once</div>
+        <div class="box is-search"><b>Hybrid search, brand-filtered</b><small>by meaning (vector) + by words (keywords), only trios within the user's brands</small></div>
+        <div class="arrow">best 3 above the cutoff</div>
+        <div class="box is-ok"><b>Into the system prompt</b><small>as examples of how analysts did it, then the agent runs as today</small></div>
+      </div>
+    </div>
+    <div class="box is-store bucket"><b>Golden bucket: one BigQuery table with a vector index</b><small>in the same GCP project as the data: no extra database to run</small></div>
+    <p class="note">🏠 Like a new analyst's folder of "how we solved it before". The team lead adds a solution to the folder (lane ①); before starting a task, the analyst pulls out the 3 most similar ones (lane ②).</p>
+  </section>
+
+  <section>
+    <h2>The guardrail: a trio holds numbers, so it follows brand scope</h2>
+    <p>A trio's written answer contains real figures. If the Levi's manager's question matched a CEO trio about Calvin Klein, those figures would land in the prompt and could leak. So the search filters trios exactly as the gateway filters rows.</p>
+    <div class="fork">
+      <div class="box is-search"><b>A candidate trio from the search</b><small>tagged with the brands its SQL and answer cover</small></div>
+      <div class="arrow"></div>
+      <div class="question">Are all its brands within the user's brands?</div>
+      <div class="branches">
+        <div class="branch">
+          <div class="label">yes</div>
+          <div class="box is-ok"><b>Can reach the prompt</b><small>e.g. a Levi's trio for the Levi's manager</small></div>
+        </div>
+        <div class="branch">
+          <div class="label">no</div>
+          <div class="box is-stop"><b>Never seen</b><small>filtered in the search query itself, not after</small></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">An analyst can also mark a trio <b>method only</b>: the figures are removed from its answer, so only the approach is left, such as how churn is defined. Then it's safe for every user.</p>
+  </section>
+
+  <section>
+    <h2>Example: the Levi's manager asks "Why did churn spike last month?"</h2>
+    <ol class="steps">
+      <li>The question is embedded once (one embedding call, which is not a chat call and doesn't count toward the 5-call budget).</li>
+      <li>One BigQuery query searches by meaning and by words, keeps the trios this user may see, merges the two rankings and keeps those above the cutoff:</li>
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Trio</th><th>Brands</th><th>Match</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr class="in"><td>"Churn rate by month for Levi's buyers"</td><td>Levi's</td><td class="mono">0.91</td><td>✅ added</td></tr>
+          <tr class="in"><td>"How we define churn" (method only)</td><td>method only</td><td class="mono">0.88</td><td>✅ added</td></tr>
+          <tr class="out"><td>"Calvin Klein churn after the price change"</td><td>Calvin Klein</td><td class="mono">0.90</td><td>❌ not this user's brand</td></tr>
+          <tr><td>"Monthly revenue by category"</td><td>all</td><td class="mono">0.41</td><td>below the cutoff</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ol class="steps" start="3">
+      <li>The two kept trios go into the system prompt under a heading like "How analysts answered similar questions":</li>
+    </ol>
+<pre><span class="c"># added to the system prompt, before the first model call</span>
+How analysts answered similar questions (examples, not current data):
+Q: How we define churn
+<span class="k">SQL:</span> customers with an order in the 3 months before, and none last month …
+A: Churn = share of those customers who didn't buy last month. Compare with the same month last year.</pre>
+    <ol class="steps" start="4">
+      <li>The agent writes its SQL the analysts' way. That SQL still goes through the query gateway like any other: the trios guide the model, they don't bypass any check.</li>
+    </ol>
+    <p class="note">Numbers made up to show the idea.</p>
+  </section>
+
+  <section>
+    <h2>The limits it keeps</h2>
+    <div class="rails">
+      <div class="rail"><b>0</b><h3>extra LLM calls</h3><p>Search runs before the first call, so a question still costs 2–5 calls. A "search" tool would add one each time.</p></div>
+      <div class="rail"><b>3</b><h3>trios at most</h3><p>Enough to show the method, few enough to keep the prompt short and cheap.</p></div>
+      <div class="rail"><b>cutoff</b><h3>or nothing</h3><p>If no trio is similar enough, none is added. A weak example misleads more than no example.</p></div>
+      <div class="rail"><b>nightly</b><h3>freshness check</h3><p>Each trio's SQL is dry-run (free). One that fails after a schema change goes back to review.</p></div>
+    </div>
+    <p class="note">If the search fails or is slow, the agent simply answers without examples, as it does today. Golden Knowledge makes answers better; it is never a single point of failure.</p>
+  </section>
+
+  <section>
+    <h2>What one trio stores</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>What it holds</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">question</td><td>The question, as asked</td><td>What new questions are compared against</td></tr>
+          <tr><td class="mono">sql</td><td>The SQL the analyst used</td><td>The method to copy, and what the nightly dry run checks</td></tr>
+          <tr><td class="mono">answer</td><td>The analyst's written answer: one line, a paragraph or a full report</td><td>How to read the numbers, not just how to fetch them</td></tr>
+          <tr><td class="mono">brands</td><td>The brands it covers, or "method only"</td><td>The brand filter in the search</td></tr>
+          <tr><td class="mono">embedding</td><td>Gemini embedding of the question</td><td>Search by meaning, through a BigQuery vector index</td></tr>
+          <tr><td class="mono">status</td><td>active, or flagged for review</td><td>Only active trios are searched</td></tr>
+          <tr><td class="mono">approved_by, approved_at</td><td>Who approved it, and when</td><td>Accountability, and to retire old ones</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h3>The rule in one sentence</h3>
+      <p>Only analyst-approved trios within the user's brands, at most 3 and only when similar enough, are added to the prompt before the first call. They guide how the agent works; every query it writes still goes through the gateway.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div>Status: design only (brief requirement 1; the PDF calls the bucket "theoretical"). Section "Golden Knowledge" in <code>docs/hld.md</code>.</div>
+    <div>Services: Gemini embedding model (Vertex AI, or <code>ML.GENERATE_EMBEDDING</code> in BigQuery); BigQuery table <code>golden.trios</code> with <code>CREATE VECTOR INDEX</code> on <code>embedding</code> and a search index on <code>question</code>; retrieval in one query, with <code>VECTOR_SEARCH</code> for meaning, <code>SEARCH</code> for keywords, rankings merged by reciprocal rank fusion. Nightly freshness check as a BigQuery scheduled query or Cloud Scheduler job. Vertex AI Vector Search is the step up if the bucket grows past what BigQuery serves fast enough.</div>
+    <div>Where it plugs into today's code: retrieval runs in <code>App.ask</code> (or a <code>before_model</code> middleware on the first call) and fills a <code>{golden-examples}</code> placeholder in <code>prompts/system.md</code>, filled the same way as <code>{user-brands}</code>. The brand filter reuses <code>User.brands</code> from <code>users.yaml</code>. Candidates come from the existing report store (<code>reports.py</code>), which already keeps question, SQL and answer together.</div>
+    <div>See also <a href="architecture.html">architecture</a>, <a href="brand-scoping.html">brand scoping</a>, <a href="report-queries.html">report queries</a>.</div>
+  </footer>
+
+</main>
+</body>
+</html>
