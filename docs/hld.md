@@ -295,7 +295,29 @@ New tools run inside the same `MAX_LLM_CALLS` budget (each round of tool calls n
 ## Observability
 
 - **Log file** (`logs/retail-agent.log`, built): each question, each LLM call with duration or error, each SQL statement with duration, rows and bytes processed.
-- **LangSmith tracing** (built; switched on by `.env`): each question is one trace labelled with the user, brands, model and conversation (one LangSmith thread per CLI run); a `query_gateway` step under each `run_sql` shows the SQL BigQuery ran after the rewrites, with rows and bytes. Traces hold prompts, SQL and already-masked rows; the pseudonym salt is a query parameter and never appears. off by default so reviewers need no account; turned on with `LANGSMITH_TRACING=true`. Each question becomes one trace with every LLM call, tool call, SQL, latency and token count, tagged with user, model, bytes scanned and retries.
+- **LangSmith tracing** (built; off by default so reviewers need no account, turned on with `LANGSMITH_TRACING=true` in `.env`): each question is one trace with every LLM call, tool call, latency and token count, labelled with the user, brands, model and conversation (one LangSmith thread per CLI run). A `query_gateway` step under each `run_sql` carries the SQL BigQuery ran after the rewrites (`rewritten_sql`), with rows and bytes processed. Traces hold prompts, SQL and already-masked rows; the pseudonym salt is a query parameter and never appears.
+
+### Metrics and alerts (design only)
+
+Speed, tokens and cost come built into the traces; the gateway already adds BigQuery bytes, rows and the rewritten SQL; quality comes from the evaluation design above. Every metric links back to the traces behind it, which show the exact messages, SQL and error.
+
+| Group | Metrics | Source |
+|---|---|---|
+| Speed | Time per question, typical and slowest 5% | Built into traces |
+| Cost | Tokens and $ per question, LLM calls per question, BigQuery bytes per question | Tokens and $ built in; bytes from the `query_gateway` metadata |
+| Health | Share of questions with an error, a timeout, or a 429 that fell back to another model | Trace errors and the model on each LLM call |
+| Quality | Online judge score (SQL fits the question), offline accuracy, share of SQL rejected and how many of those were false alarms, share of "no data" answers, 👍/👎 | Judge evaluator, evaluation runs, gateway errors, user feedback |
+| Safety | Answers containing personal data (must be 0), brand managers' SQL carrying the brand filter (must be 100%) | Pass/fail code check over traces |
+
+**Alerts** send a message (Slack, email or PagerDuty, through a webhook) when a number crosses its limit, so nobody has to watch the dashboard. Four are enough: error rate above 5% in 5 minutes, fallback rate jumping (e.g. a model's quota running out), the judge score dropping below its usual level, and any personal data found in an answer (fires on a single case). Alerts can also watch one kind of error, filtered by tag or error message. Each alert links to the failing traces.
+
+| | Prototype | Production |
+|---|---|---|
+| Tool | LangSmith (cloud) | Self-hosted Langfuse, on the company's own infrastructure |
+| Traces, datasets, LLM judge, prompt management | LangSmith | Langfuse (all open source and free when self-hosted) |
+| Alerts | LangSmith alerts on error %, latency or feedback score, per project, to PagerDuty or a webhook | Langfuse alerts on latency, cost, error counts or evaluation scores, to Slack or a webhook (self-hosted v4+, needs a dispatcher configured) |
+
+Switching means adding Langfuse's LangChain callback handler where the app builds its run config; the agent, tools and gateway don't change.
 
 ## External services
 
