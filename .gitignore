@@ -21,8 +21,9 @@ data/
 # Editor settings
 .idea/
 
-# Study notes stay local: the HTML explainers and most of their PDFs.
+# Study notes stay local: the HTML explainers (docs/html/) and most of their PDFs.
 # The repo keeps PDFs of the four that show design choices and test results.
+docs/html/
 docs/*.html
 docs/pdf/*
 !docs/pdf/brand-scoping.pdf

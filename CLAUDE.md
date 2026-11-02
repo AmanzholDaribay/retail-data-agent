@@ -30,4 +30,6 @@ CLI chat agent that answers retail analytics questions over BigQuery
 - Every query goes through the guard, with the bytes-billed cap.
 
 ## Docs
-- When code changes, say which `docs/*.html` explainers are now stale.
+- When code changes, say which `docs/html/*.html` explainers are now stale.
+- Explainers live in `docs/html/` and stay local (git-ignored). The repo keeps PDFs of four
+  in `docs/pdf/`; regenerate a PDF when its page changes.
