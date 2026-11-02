@@ -21,5 +21,11 @@ data/
 # Editor settings
 .idea/
 
-# Local demo run sheet
-docs/experiment.html
+# Study notes stay local: the HTML explainers and most of their PDFs.
+# The repo keeps PDFs of the four that show design choices and test results.
+docs/*.html
+docs/pdf/*
+!docs/pdf/brand-scoping.pdf
+!docs/pdf/small-groups.pdf
+!docs/pdf/model-switching.pdf
+!docs/pdf/report-queries.pdf

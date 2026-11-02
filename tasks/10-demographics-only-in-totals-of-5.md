@@ -2,7 +2,7 @@
 
 **What to build:** demographic columns (age, gender, city, state, country, traffic source) reach the model only inside a total, and only when that total covers at least `MIN_GROUP_SIZE` customers (default 5). A query that lists them row by row is rejected. A query that totals them gets `HAVING COUNT(DISTINCT <customer id>) >= 5` added, so BigQuery drops the small groups itself. This is the third PII slice of step 3, and it settles the plan's open decision "measuring group size".
 
-Source: [plan, step 3](../docs/plan.md). Explainer: [small-groups.html](../docs/small-groups.html).
+Source: [plan, step 3](../docs/plan.md). Explainer: [small-groups.pdf](../docs/pdf/small-groups.pdf).
 
 **Blocked by:** nothing (tickets 08 and 09 are done)
 

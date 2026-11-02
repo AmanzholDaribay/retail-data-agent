@@ -145,7 +145,7 @@ If the guard or the dry run rejects the query, or BigQuery reports an error, the
 | **LangChain `create_agent`** as the agent framework. | Gives the model ↔ tools loop, checkpointing and interrupts. Agent-level concerns (call budget, delete confirmation) attach as middleware. Heavier options (Deep Agents) add tokens and latency for a job of 1–3 tool calls per question. |
 | **Gemini by default, provider set in config.** | The client's reviewers test with a free Gemini AI Studio key. Switching provider is a config change through `init_chat_model`; Anthropic, OpenAI and Azure OpenAI are available as optional extras but switched off. |
 | **All data policy in the query gateway, not in middleware or the prompt.** | One choke point that the model can't talk its way around, and it doesn't depend on the agent framework. Pattern-matching PII middleware was rejected by the client as not robust. |
-| **Brand scoping by rewriting the SQL**, not scoped views in BigQuery. | The gateway swaps every table in the parsed query for a version filtered to the user's brands, so no prompt can widen it. Scoped views would need datasets and views set up in a GCP project and kept in step with `users.yaml`, and can't be tested offline. See [brand-scoping.html](pdf/brand-scoping.pdf). |
+| **Brand scoping by rewriting the SQL**, not scoped views in BigQuery. | The gateway swaps every table in the parsed query for a version filtered to the user's brands, so no prompt can widen it. Scoped views would need datasets and views set up in a GCP project and kept in step with `users.yaml`, and can't be tested offline. See [brand-scoping.pdf](pdf/brand-scoping.pdf). |
 | **Own `Database` protocol and BigQuery adapter**, not SQLAlchemy. | Keeps BigQuery features we rely on: per-job byte caps, dry-run byte estimates and job stats. Another engine means another adapter. |
 | **Schema in `schema.yaml`, prompt in `prompts/system.md`.** | Column notes give the model meaning that raw metadata lacks, with no extra round trip per question. The prompt is a file, so persona and tone change without touching code. |
 | **Compact text tables as tool results.** | Fewer tokens than JSON rows; values formatted plainly, with a footer when a result is cut off or empty. |
@@ -163,21 +163,21 @@ Each layer is enforced in code; the prompt is only the first line.
 | Brand scoping | The user is picked at CLI start (`--user`); a config file maps users to brands, and the CEO sees all. The gateway restricts every query to the user's brands, so orders and customers are reachable only through purchases of in-scope products. Done by rewriting the SQL (`query_safety/step3_brand_scope/brand_scope.py`). For a brand manager, `orders.num_of_item` is recounted from their own items (`query_safety/step3_brand_scope/order_item_count.py`). | built |
 | PII protection | Only columns listed in `schema.yaml` can be read (an allow-list resolved from the parsed query, not name matching), so personal columns are never selected and `*` is rejected (`step2_personal_data/columns.py`). Never shown: first and last name, email, street address, postal code, exact coordinates, IP address. A second check on the returned rows is a known limit. | built |
 | Pseudonyms | `user_id` is replaced by a stable salted-hash pseudonym, so follow-up questions about one customer still work. Done by rewriting the SQL for every user (`step2_personal_data/customer_pseudonyms.py`); the salt reaches BigQuery only as a query parameter. | built |
-| Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. Done by adding `HAVING COUNT(DISTINCT <customer id>) >= MIN_GROUP_SIZE` to every total of a tagged column (`step2_personal_data/small_groups.py`). | built |
+| Aggregate-only fields | City, state, country, age, gender and traffic source appear only in aggregates, and groups smaller than `MIN_GROUP_SIZE` (default 5, configurable) are hidden. Done by adding `HAVING COUNT(DISTINCT <customer id>) >= MIN_GROUP_SIZE` to every total of a tagged column (`step2_personal_data/small_groups.py`). See [small-groups.pdf](pdf/small-groups.pdf). | built |
 | Report ownership | Only a report's author can see or delete it: the owner comes from the code, not the model, and every read and delete filters on it in the store's SQL (`reports.py`). | built |
 
 Because masking happens in the gateway, PII never reaches the LLM, the logs or the traces.
 
 ## Reports and deletion
 
-- Asked for a report (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs, sending independent queries together as parallel tool calls to stay within the call budget, then writes findings, insights and action items.
+- Asked for a report (e.g. "create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs, sending independent queries together as parallel tool calls to stay within the call budget, then writes findings, insights and action items. Why parallel calls, with a live test on Gemini and BigQuery: [report-queries.pdf](pdf/report-queries.pdf).
 - Reports are saved to a local SQLite store (`REPORTS_PATH`) with owner, conversation id, creation time, the question, the SQL behind it and the report text, through a `save_report` tool whose result is the final answer (no extra LLM call). The owner and conversation come from the code, not the model. Built. A `list_reports` tool lists the asking user's reports (owner filtered in the SQL), optionally those mentioning some text or made in this conversation; built. Deletion is built: the code shows the exact list and deletes only after a typed `yes`, as below.
 - Deletion selects reports by content ("delete all reports mentioning Client X") or by conversation ("delete all the reports we made in this conversation").
 - The model can only propose a deletion. Code shows the exact list and waits for explicit typed confirmation (a LangGraph interrupt) inside the chat, then hard-deletes. Cancelling leaves everything as it was and the chat continues.
 
 ## Golden Knowledge (design only)
 
-The brief's bucket of historical **trios**: a question, the SQL an analyst wrote for it, and the analyst's written answer (one line, a paragraph or a full report). The agent uses them to answer new questions the way analysts did, for example reusing their definition of churn instead of guessing. Not built: the brief calls the bucket theoretical. Visual explainer: [golden-knowledge.html](pdf/golden-knowledge.pdf).
+The brief's bucket of historical **trios**: a question, the SQL an analyst wrote for it, and the analyst's written answer (one line, a paragraph or a full report). The agent uses them to answer new questions the way analysts did, for example reusing their definition of churn instead of guessing. Not built: the brief calls the bucket theoretical.
 
 ```mermaid
 flowchart LR
@@ -212,7 +212,7 @@ flowchart LR
 
 ## User preferences (design only)
 
-The brief's user-level learning loop: the agent remembers that one user wants tables and another wants bullet points, how deep they like the analysis, and whether they want charts, and learns these over time. Preferences live in the same app database as saved reports, keyed by the signed-in user, and reach the model through the system prompt on every question. Not built. Visual explainer: [user-preferences.html](pdf/user-preferences.pdf).
+The brief's user-level learning loop: the agent remembers that one user wants tables and another wants bullet points, how deep they like the analysis, and whether they want charts, and learns these over time. Preferences live in the same app database as saved reports, keyed by the signed-in user, and reach the model through the system prompt on every question. Not built.
 
 ```mermaid
 flowchart LR
@@ -246,7 +246,7 @@ flowchart LR
 
 ## Evaluation (design only)
 
-The brief's quality assurance: how we know the agent is good before deploying a change, and how we keep watching it after. Two parts: an **offline** accuracy score from the Golden trios, and **online** checks on the LangSmith traces of real use. Not built; the prototype has 185 unit tests with a scripted model and a fake database, which check the safety rules but not answer quality. Visual explainer: [evaluation.html](pdf/evaluation.pdf).
+The brief's quality assurance: how we know the agent is good before deploying a change, and how we keep watching it after. Two parts: an **offline** accuracy score from the Golden trios, and **online** checks on the LangSmith traces of real use. Not built; the prototype has 185 unit tests with a scripted model and a fake database, which check the safety rules but not answer quality.
 
 ```mermaid
 flowchart LR
@@ -353,7 +353,7 @@ New tools run inside the same `MAX_LLM_CALLS` budget (each round of tool calls n
 | Model busy or unreachable | 30 s timeout and 1 SDK retry per LLM call; the CLI prints a clear message and keeps running. | built |
 | Outage mid-question | Unanswered tool calls get an error result, so the conversation stays usable for the next question. | built |
 | Empty result | The model rechecks its filters once within the same budget, then says plainly that nothing matched. When the small-group rule hid every row, the result says so, and the model reports the detail as hidden for privacy instead of "no data". | built |
-| Gemini 429 / 5xx | After its one SDK retry, a failed call goes to the next model in `LLM_FALLBACK_MODELS` (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`). Fallback models use the same provider, so Gemini falls back only to Gemini. Each Gemini model has its own free-tier quota (20 requests a day), so the fallback roughly doubles how many questions a free key can answer. Every call tries the primary model first, so the agent goes back to it once it recovers. | built |
+| Gemini 429 / 5xx | After its one SDK retry, a failed call goes to the next model in `LLM_FALLBACK_MODELS` (default `gemini-3.8-flash` → `gemini-3.5-flash-lite`). Fallback models use the same provider, so Gemini falls back only to Gemini. Each Gemini model has its own free-tier quota (20 requests a day), so the fallback roughly doubles how many questions a free key can answer. Every call tries the primary model first, so the agent goes back to it once it recovers. See [model-switching.pdf](pdf/model-switching.pdf). | built |
 | BigQuery transient errors | Today a transient error ends that question with a clear message and the chat keeps running. Retries with backoff are the production step. | known limit |
 
 ## Observability

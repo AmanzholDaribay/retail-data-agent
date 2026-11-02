@@ -2,7 +2,7 @@
 
 **What to build:** the thinnest end-to-end slice of step 5. When the user asks for a report ("create a report for Q1 including insights and action items for Q2"), the agent runs the queries it needs, writes findings, insights and action items, and saves the report to a local SQLite store with its owner, conversation id and creation time. A saved report holds the question, the SQL that ran and the report text (confirmed by the client). Listing and deleting come in the next slices; this one only creates and saves.
 
-Source: [plan, step 5](../docs/plan.md). Research: [report-questions-db-agent.md](../docs/research/report-questions-db-agent.md) and [report-queries.html](../docs/report-queries.html).
+Source: [plan, step 5](../docs/plan.md). Research: [report-questions-db-agent.md](../docs/research/report-questions-db-agent.md) and [report-queries.pdf](../docs/pdf/report-queries.pdf).
 
 **Blocked by:** nothing (steps 1–3 done; step 3's row check can come later)
 
