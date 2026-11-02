@@ -7,7 +7,7 @@ limits each user to their own brands.
 
 - **CLI** (`retail-agent`), as the brief asks, and a **Streamlit page** for demos.
 - **Gemini** by default, on a free Google AI Studio key, in 2–5 LLM calls per question.
-- Design: [docs/hld.md](docs/hld.md). Visual explainers: [docs/](docs/).
+- Design: [docs/hld.md](docs/hld.md). Visual explainers (PDF): [docs/pdf/](docs/pdf/).
 
 ## Setup
 
@@ -107,7 +107,13 @@ on any one agent library.
 uv run pytest
 ```
 
-184 tests, using a scripted model and a fake database, so they need no keys or network.
+With pip, install pytest first (it's a dev tool, not in `requirements.txt`):
+
+```bash
+pip install pytest && pytest
+```
+
+185 tests, using a scripted model and a fake database, so they need no keys or network.
 
 ## Project layout
 

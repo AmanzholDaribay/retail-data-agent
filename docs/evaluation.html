@@ -284,7 +284,7 @@ GROUP BY city</pre>
   </section>
 
   <footer>
-    <div>Status: design only (brief requirement 6, with 7 for the online part). Design: "Evaluation" in <code>docs/hld.md</code>. Built today: 184 unit tests (<code>uv run pytest</code>) with a scripted model and a fake database, covering the gateway's safety rules, not answer quality.</div>
+    <div>Status: design only (brief requirement 6, with 7 for the online part). Design: "Evaluation" in <code>docs/hld.md</code>. Built today: 185 unit tests (<code>uv run pytest</code>) with a scripted model and a fake database, covering the gateway's safety rules, not answer quality.</div>
     <div>Would plug in as: a script that loads <code>golden.trios</code> plus the LangSmith regression dataset, runs the agent with that trio excluded from <code>{golden-examples}</code>, executes both SQLs through the same gateway, and compares result sets (order ignored unless ranked, numbers within rounding). Runs on a paid key: the free tier allows about 20 calls a day per model.</div>
     <div>Online: LangSmith dashboards over trace metadata (<code>rewritten_sql</code>, rows, bytes, errors, model) and an LLM-as-judge evaluator on a daily sample; user 👍/👎 stored as LangSmith feedback.</div>
     <div>See also <a href="golden-knowledge.html">Golden Knowledge</a>, <a href="user-preferences.html">user preferences</a>, <a href="sql-errors.html">SQL errors</a>, <a href="small-groups.html">small groups</a>, <a href="architecture.html">architecture</a>.</div>

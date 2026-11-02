@@ -24,7 +24,12 @@ def main() -> None:
     # Export .env into the environment so the LLM and Google SDKs find their credentials.
     load_dotenv()
     _configure_logging()
-    settings = Settings()
+    try:
+        settings = Settings()
+    except ValidationError as error:
+        # Usually no .env yet: name each missing setting instead of showing a traceback.
+        names = ", ".join(str(problem["loc"][0]).upper() for problem in error.errors())
+        sys.exit(f"Missing or invalid settings: {names}. Copy .env.example to .env and fill them in.")
     try:
         user = load_user(settings.users_path, args.user)
     except UnknownUser as error:

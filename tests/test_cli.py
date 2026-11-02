@@ -1,3 +1,5 @@
+import pytest
+
 from retail_agent import cli
 from retail_agent.app import SqlRun, TurnResult
 
@@ -45,6 +47,18 @@ def test_verbose_shows_every_sql_with_its_outcome(monkeypatch, capsys):
     assert f"{REJECTED}\n❌ Name the columns you need instead of using *." in printed
     assert f"{FIXED}\n✅ ran\nSent to BigQuery:\n{SENT}" in printed
     assert printed.index(REJECTED) < printed.index(FIXED)
+
+
+def test_missing_settings_exit_with_a_clear_message(monkeypatch):
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)  # as if there were no .env
+    monkeypatch.setenv("GCP_PROJECT", "")  # the empty line copied from .env.example
+    monkeypatch.setattr("sys.argv", ["retail-agent", "--user", "ceo"])
+
+    with pytest.raises(SystemExit) as stopped:
+        cli.main()
+
+    assert "GCP_PROJECT" in str(stopped.value.code)
+    assert ".env.example" in str(stopped.value.code)
 
 
 def test_verbose_shows_the_answer_after_the_sql(monkeypatch, capsys):

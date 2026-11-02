@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     # LLM calls allowed per question (a normal one uses 2), to stay within Gemini's free-tier limits.
     max_llm_calls: int = 5
-    gcp_project: str
+    # Required. min_length=1 also rejects the empty GCP_PROJECT= line copied from .env.example.
+    gcp_project: str = Field(min_length=1)
     max_bytes_billed: int = 1_000_000_000
     max_rows: int = 50
     schema_path: Path = Path("schema.yaml")

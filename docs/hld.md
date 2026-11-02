@@ -145,7 +145,7 @@ If the guard or the dry run rejects the query, or BigQuery reports an error, the
 | **LangChain `create_agent`** as the agent framework. | Gives the model ↔ tools loop, checkpointing and interrupts. Agent-level concerns (call budget, delete confirmation) attach as middleware. Heavier options (Deep Agents) add tokens and latency for a job of 1–3 tool calls per question. |
 | **Gemini by default, provider set in config.** | The client's reviewers test with a free Gemini AI Studio key. Switching provider is a config change through `init_chat_model`; Anthropic, OpenAI and Azure OpenAI are available as optional extras but switched off. |
 | **All data policy in the query gateway, not in middleware or the prompt.** | One choke point that the model can't talk its way around, and it doesn't depend on the agent framework. Pattern-matching PII middleware was rejected by the client as not robust. |
-| **Brand scoping by rewriting the SQL**, not scoped views in BigQuery. | The gateway swaps every table in the parsed query for a version filtered to the user's brands, so no prompt can widen it. Scoped views would need datasets and views set up in a GCP project and kept in step with `users.yaml`, and can't be tested offline. See [brand-scoping.html](brand-scoping.html). |
+| **Brand scoping by rewriting the SQL**, not scoped views in BigQuery. | The gateway swaps every table in the parsed query for a version filtered to the user's brands, so no prompt can widen it. Scoped views would need datasets and views set up in a GCP project and kept in step with `users.yaml`, and can't be tested offline. See [brand-scoping.html](pdf/brand-scoping.pdf). |
 | **Own `Database` protocol and BigQuery adapter**, not SQLAlchemy. | Keeps BigQuery features we rely on: per-job byte caps, dry-run byte estimates and job stats. Another engine means another adapter. |
 | **Schema in `schema.yaml`, prompt in `prompts/system.md`.** | Column notes give the model meaning that raw metadata lacks, with no extra round trip per question. The prompt is a file, so persona and tone change without touching code. |
 | **Compact text tables as tool results.** | Fewer tokens than JSON rows; values formatted plainly, with a footer when a result is cut off or empty. |
@@ -177,7 +177,7 @@ Because masking happens in the gateway, PII never reaches the LLM, the logs or t
 
 ## Golden Knowledge (design only)
 
-The brief's bucket of historical **trios**: a question, the SQL an analyst wrote for it, and the analyst's written answer (one line, a paragraph or a full report). The agent uses them to answer new questions the way analysts did, for example reusing their definition of churn instead of guessing. Not built: the brief calls the bucket theoretical. Visual explainer: [golden-knowledge.html](golden-knowledge.html).
+The brief's bucket of historical **trios**: a question, the SQL an analyst wrote for it, and the analyst's written answer (one line, a paragraph or a full report). The agent uses them to answer new questions the way analysts did, for example reusing their definition of churn instead of guessing. Not built: the brief calls the bucket theoretical. Visual explainer: [golden-knowledge.html](pdf/golden-knowledge.pdf).
 
 ```mermaid
 flowchart LR
@@ -212,7 +212,7 @@ flowchart LR
 
 ## User preferences (design only)
 
-The brief's user-level learning loop: the agent remembers that one user wants tables and another wants bullet points, how deep they like the analysis, and whether they want charts, and learns these over time. Preferences live in the same app database as saved reports, keyed by the signed-in user, and reach the model through the system prompt on every question. Not built. Visual explainer: [user-preferences.html](user-preferences.html).
+The brief's user-level learning loop: the agent remembers that one user wants tables and another wants bullet points, how deep they like the analysis, and whether they want charts, and learns these over time. Preferences live in the same app database as saved reports, keyed by the signed-in user, and reach the model through the system prompt on every question. Not built. Visual explainer: [user-preferences.html](pdf/user-preferences.pdf).
 
 ```mermaid
 flowchart LR
@@ -246,7 +246,7 @@ flowchart LR
 
 ## Evaluation (design only)
 
-The brief's quality assurance: how we know the agent is good before deploying a change, and how we keep watching it after. Two parts: an **offline** accuracy score from the Golden trios, and **online** checks on the LangSmith traces of real use. Not built; the prototype has 184 unit tests with a scripted model and a fake database, which check the safety rules but not answer quality. Visual explainer: [evaluation.html](evaluation.html).
+The brief's quality assurance: how we know the agent is good before deploying a change, and how we keep watching it after. Two parts: an **offline** accuracy score from the Golden trios, and **online** checks on the LangSmith traces of real use. Not built; the prototype has 185 unit tests with a scripted model and a fake database, which check the safety rules but not answer quality. Visual explainer: [evaluation.html](pdf/evaluation.pdf).
 
 ```mermaid
 flowchart LR
