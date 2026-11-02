@@ -52,7 +52,7 @@ make ui                      # Streamlit page at http://localhost:8501
 ```
 
 Without `make`: `uv run retail-agent --user ceo` (or `retail-agent --user ceo` after pip).
-Users and their brands live in [users.yaml](users.yaml): `ceo`, `levis_manager`, `denim_lead`.
+Users and their brands live in [config/users.yaml](config/users.yaml): `ceo`, `levis_manager`, `denim_lead`.
 
 ## Example run
 
@@ -126,8 +126,8 @@ src/retail_agent/
   query_safety/        the gateway: guard, personal data, brand scope
   db/                  database protocol and the BigQuery adapter
 prompts/system.md      the system prompt
-schema.yaml            tables and columns the agent may use, with notes
-users.yaml             users and their brands
+config/schema.yaml     tables and columns the agent may use, with notes
+config/users.yaml      users and their brands
 docs/                  design (hld.md) and visual explainers
 ```
 

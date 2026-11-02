@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     gcp_project: str = Field(min_length=1)
     max_bytes_billed: int = 1_000_000_000
     max_rows: int = 50
-    schema_path: Path = Path("schema.yaml")
+    schema_path: Path = Path("config/schema.yaml")
     prompt_path: Path = Path("prompts/system.md")
-    users_path: Path = Path("users.yaml")
+    users_path: Path = Path("config/users.yaml")
     # The secret behind customer pseudonyms (cust_72ac84091163). Unset or empty: a random one per run, so
     # pseudonyms stay the same within a run but change between runs.
     pseudonym_salt: SecretStr = Field(default_factory=_random_salt)

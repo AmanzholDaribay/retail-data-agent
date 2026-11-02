@@ -1,4 +1,4 @@
-# Pick who is asking with WHO (names live in users.yaml), e.g. `make run WHO=levis_manager`.
+# Pick who is asking with WHO (names live in config/users.yaml), e.g. `make run WHO=levis_manager`.
 WHO ?= ceo
 
 .PHONY: run run_logs ui

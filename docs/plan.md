@@ -12,7 +12,7 @@ Step by step: first one tiny slice that works end to end, then grow it.
 
 ## The brief in short
 
-The full assignment is the PDF in the repo root, [AI Technical Assignment - Retail Company.pdf](<../AI Technical Assignment - Retail Company.pdf>), the source of truth for the task. This section is a short summary.
+The full assignment is the PDF in `docs/`, [AI Technical Assignment - Retail Company.pdf](<AI Technical Assignment - Retail Company.pdf>), the source of truth for the task. The questions asked to the client and their answers are in [assessment_follow_ups.pdf](assessment_follow_ups.pdf). This section is a short summary.
 
 A CLI chat agent that answers retail analytics questions over `bigquery-public-data.thelook_ecommerce` (`orders`, `order_items`, `products`, `users`). It runs on Gemini: the client's team tests it with their own free Google AI Studio key, so it must stay within free-tier rate limits, at roughly 2–5 LLM calls per question. The provider stays swappable through config (see "Step 1 design"). Expected effort is 6–12 hours. The submission is a public GitHub repo with docs, source code and an architecture diagram. Grading focuses on system design, the technical explanation and an elegant prototype.
 

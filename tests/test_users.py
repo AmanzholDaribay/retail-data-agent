@@ -15,16 +15,16 @@ def write_users(tmp_path: Path, text: str) -> Path:
 
 
 def test_a_manager_gets_only_their_brands():
-    assert load_user(ROOT / "users.yaml", "denim_lead") == User(name="denim_lead", brands={"Levi's", "Calvin Klein"})
+    assert load_user(ROOT / "config" / "users.yaml", "denim_lead") == User(name="denim_lead", brands={"Levi's", "Calvin Klein"})
 
 
 def test_all_means_every_brand():
-    assert load_user(ROOT / "users.yaml", "ceo").brands is None
+    assert load_user(ROOT / "config" / "users.yaml", "ceo").brands is None
 
 
 def test_an_unknown_user_names_the_known_ones():
     with pytest.raises(UnknownUser, match="Unknown user 'bob'. Known users: ceo, levis_manager, denim_lead"):
-        load_user(ROOT / "users.yaml", "bob")
+        load_user(ROOT / "config" / "users.yaml", "bob")
 
 
 @pytest.mark.parametrize(

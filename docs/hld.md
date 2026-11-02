@@ -90,7 +90,7 @@ Everything sits in one Google Cloud project and region, so data, model and trace
 
 | Component | Responsibility | Where | Status |
 |---|---|---|---|
-| CLI | Chat loop in the terminal. `--user` picks who is asking, from `users.yaml` (`users.py`). Prints each answer with the SQL that produced it (`--verbose`: every SQL tried, ✅ or ❌ with the reason); a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
+| CLI | Chat loop in the terminal. `--user` picks who is asking, from `config/users.yaml` (`users.py`). Prints each answer with the SQL that produced it (`--verbose`: every SQL tried, ✅ or ❌ with the reason); a failed question prints a clear message and the loop keeps running. | `cli.py` | built |
 | Streamlit page | Browser chat over the same `App`: a user dropdown (switching starts a new conversation), each SQL as a fold-out with the SQL sent to BigQuery, and Yes / Cancel buttons for deletes. Optional extra (`uv sync --extra ui`), started with `make ui`. | `ui.py` | built |
 | App | One conversation per CLI run or page session. Sends a question to the agent and returns the answer plus the SQL that ran. | `app.py` | built |
 | Agent loop | The model ↔ tools loop, from LangChain `create_agent` (LangGraph underneath). Remembers earlier turns through a checkpointer. | `agent.py` | built |
@@ -99,7 +99,7 @@ Everything sits in one Google Cloud project and region, so data, model and trace
 | `run_sql` tool | Runs one query through the gateway. Returns a compact table to the model, or `Error: …` so the model can fix its SQL. | `tools.py` | built |
 | Query gateway | The only path from the agent to the data. All data policy lives here, independent of the agent framework. Runs the query guard, the personal-data step (column allow-list, small groups, customer pseudonyms), the brand scope, a dry run against the byte limit, then the query, and marks a result when small groups were hidden. | `query_safety/` (`gateway.py`, `step1_guard.py`, `step2_personal_data/`, `step3_brand_scope/`) | built; a second check on returned rows is a known limit |
 | Database adapter | Driver only, behind a small `Database` protocol. The BigQuery adapter sets `maximum_bytes_billed` on every job. | `db/` | built |
-| Schema | `schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
+| Schema | `config/schema.yaml`: tables, columns, types and short notes, rendered into the system prompt once at startup. | `schema.py` | built |
 | Report tools and store | Save, list and delete reports. A report holds the question, the SQL and the answer, plus its owner, conversation id and creation time, in a local SQLite file (`REPORTS_PATH`). | `reports.py`, `tools.py` | built |
 | Delete confirmation | Code (not the model) shows the exact reports to be deleted and waits for an explicit `yes` (a LangGraph interrupt in `delete_reports`) before a hard delete. | `tools.py`, `app.py` (`App.confirm`) | built |
 | Observability | Log file of questions, LLM calls and SQL; LangSmith tracing on top, switched on in `.env`. | `observability.py`, `app.py` | built |

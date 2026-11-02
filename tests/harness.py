@@ -28,7 +28,7 @@ def assemble_app(
     return assemble(
         model=model,
         database=database,
-        schema=load_schema(ROOT / "schema.yaml"),
+        schema=load_schema(ROOT / "config" / "schema.yaml"),
         prompt_template=(ROOT / "prompts" / "system.md").read_text(),
         settings=Settings(gcp_project="test-project", **settings),
         user=user,

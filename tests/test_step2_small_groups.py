@@ -9,7 +9,7 @@ from retail_agent.query_safety.step2_personal_data.small_groups import SmallGrou
 from retail_agent.schema import load_schema
 from retail_agent.users import User
 
-SCHEMA = load_schema(ROOT / "schema.yaml")
+SCHEMA = load_schema(ROOT / "config" / "schema.yaml")
 SMALL_GROUPS = SmallGroups("bigquery", SCHEMA, min_group_size=5)
 
 
